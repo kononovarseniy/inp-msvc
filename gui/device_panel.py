@@ -145,14 +145,29 @@ class DevicePanel(Gtk.Box):
         super().__init__()
 
         self.cells: List[CellState] = []
-        self.device: Optional[DeviceAddress] = None
+        self.device = None
         self.worker: Optional[Worker] = None
         self._state = _State.STOPPED
 
-        self.tree_view, self.adapter = self._make_tree_view()
         grid = Gtk.Grid()
-        grid.attach(self.tree_view, 0, 0, 1, 1)
+        grid.set_column_spacing(4)
+        grid.set_row_spacing(4)
+
+        self.device_label = Gtk.Label()
+        self.device_label.set_xalign(0)
+        self.update_device_label()
+        grid.attach(self.device_label, 0, 0, 1, 1)
+
+        self.tree_view, self.adapter = self._make_tree_view()
+        grid.attach(self.tree_view, 0, 1, 1, 1)
+
         self.add(grid)
+
+    def update_device_label(self):
+        if self.device is not None:
+            self.device_label.set_markup(f'Connected to <b>{self.device}</b>')
+        else:
+            self.device_label.set_markup('Not connected')
 
     def is_connected(self):
         return self._state == _State.STARTED
@@ -181,6 +196,7 @@ class DevicePanel(Gtk.Box):
     @GObject.Signal
     def started(self):
         LOGGER.debug(f"Signal 'started' is emitted for {self.device}")
+        self.update_device_label()
 
     def stop(self):
         if self._state <= _State.STARTING:
@@ -201,7 +217,7 @@ class DevicePanel(Gtk.Box):
 
     @GObject.Signal
     def stopped(self):
-        pass
+        self.update_device_label()
 
     def _make_tree_view(self):
         adapter = TreeModelAdapter()
