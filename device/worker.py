@@ -2,7 +2,7 @@ import logging
 from concurrent.futures import Future
 from concurrent.futures.thread import ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import Iterable, Tuple, List
+from typing import Tuple, List, Optional
 
 from device.device import Device, Cell
 
@@ -15,9 +15,12 @@ logger.setLevel(logging.INFO)
 
 
 @dataclass
-class DeviceInfo:
+class DeviceAddress:
     name: str
     address: Tuple[str, int]
+
+    def __str__(self) -> str:
+        return f"{self.name}@{self.address[0]}:{self.address[1]}"
 
 
 @dataclass
@@ -95,46 +98,47 @@ def _set_ramp_down_speed(cell: Cell, value: int) -> int:
 class Worker:
     def __init__(self):
         self._executor = ThreadPoolExecutor(max_workers=1)
-        self.devices: List[Device] = []
+        self.device: Optional[Device] = None
+        self._connected = False
 
-    def connect(self, devices: Iterable[DeviceInfo]) -> Future:
-        ds = list(devices)
+    def is_connected(self):
+        return self._connected
 
+    def connect(self, device: DeviceAddress) -> Future:
         def _connect():
-            logger.info("Connecting to devices...")
-            for i, dev in enumerate(ds):
-                logger.info(f"Connecting to device #{i + 1} {dev.address}")
-                self.devices.append(Device(dev.name, CHANNEL_COUNT, dev.address, SOCKET_TIMEOUT))
+            logger.info(f"Connecting to device {device}")
+            self.device = Device(device.name, CHANNEL_COUNT, device.address, SOCKET_TIMEOUT)
+            self._connected = True
 
         return self._executor.submit(_connect)
 
     def _read_state(self):
-        return list(map(_read_device_status, self.devices))
+        return _read_device_status(self.device)
 
-    def read_state(self) -> 'Future[List[DeviceState]]':
+    def read_state(self) -> 'Future[DeviceState]':
         return self._executor.submit(self._read_state)
 
-    def set_output_enabled(self, device: int, cell: int, enabled: float) -> 'Future[bool]':
-        return self._executor.submit(_set_output_enabled, self.devices[device].cells[cell], enabled)
+    def set_output_enabled(self, cell: int, enabled: float) -> 'Future[bool]':
+        return self._executor.submit(_set_output_enabled, self.device.cells[cell], enabled)
 
-    def set_voltage(self, device: int, cell: int, voltage: float) -> 'Future[float]':
-        return self._executor.submit(_set_voltage, self.devices[device].cells[cell], voltage)
+    def set_voltage(self, cell: int, voltage: float) -> 'Future[float]':
+        return self._executor.submit(_set_voltage, self.device.cells[cell], voltage)
 
-    def set_current_limit(self, device: int, cell: int, value: float) -> 'Future[float]':
-        return self._executor.submit(_set_current_limit, self.devices[device].cells[cell], value)
+    def set_current_limit(self, cell: int, value: float) -> 'Future[float]':
+        return self._executor.submit(_set_current_limit, self.device.cells[cell], value)
 
-    def set_ramp_up_speed(self, device: int, cell: int, value: int) -> 'Future[int]':
-        return self._executor.submit(_set_ramp_up_speed, self.devices[device].cells[cell], value)
+    def set_ramp_up_speed(self, cell: int, value: int) -> 'Future[int]':
+        return self._executor.submit(_set_ramp_up_speed, self.device.cells[cell], value)
 
-    def set_ramp_down_speed(self, device: int, cell: int, value: int) -> 'Future[int]':
-        return self._executor.submit(_set_ramp_down_speed, self.devices[device].cells[cell], value)
+    def set_ramp_down_speed(self, cell: int, value: int) -> 'Future[int]':
+        return self._executor.submit(_set_ramp_down_speed, self.device.cells[cell], value)
 
-    def disconnect(self) -> Future:
-        ds = self.devices
-        self.devices = []
+    def _disconnect(self):
+        self.device.close()
 
-        def _disconnect():
-            for d in ds:
-                d.close()
-
-        return self._executor.submit(_disconnect)
+    def shutdown(self) -> Future:
+        f = self._executor.submit(self._disconnect)
+        self._executor.shutdown(False)
+        self._executor = None
+        self._connected = False
+        return f
