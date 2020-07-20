@@ -4,7 +4,7 @@ from concurrent.futures.thread import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Tuple, List, Optional
 
-from device.device import Device, Cell
+from device.device import Device, Cell, DeviceAddress
 
 CHANNEL_COUNT = 16
 
@@ -12,15 +12,6 @@ SOCKET_TIMEOUT = 10
 
 logger = logging.getLogger("Worker")
 logger.setLevel(logging.INFO)
-
-
-@dataclass
-class DeviceAddress:
-    name: str
-    address: Tuple[str, int]
-
-    def __str__(self) -> str:
-        return f"{self.name}@{self.address[0]}:{self.address[1]}"
 
 
 @dataclass
@@ -107,7 +98,7 @@ class Worker:
     def connect(self, device: DeviceAddress) -> Future:
         def _connect():
             logger.info(f"Connecting to device {device}")
-            self.device = Device(device.name, CHANNEL_COUNT, device.address, SOCKET_TIMEOUT)
+            self.device = Device(device, CHANNEL_COUNT, SOCKET_TIMEOUT)
             self._connected = True
 
         return self._executor.submit(_connect)

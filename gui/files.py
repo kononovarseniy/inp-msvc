@@ -1,7 +1,7 @@
 import csv
 import logging
 
-from device.worker import DeviceAddress
+from device.device import DeviceAddress
 
 LOGGER = logging.getLogger('files')
 

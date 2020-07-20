@@ -1,5 +1,6 @@
 import logging
 import socket
+from dataclasses import dataclass
 from typing import Union, Optional, Tuple, Dict
 
 from device.command import Command, CommandType, CommandResponse, encode_command, RESPONSE_LENGTH, decode_response
@@ -207,18 +208,26 @@ class Cell:
         return self.registers.read(CellRegister.rdwnspeed)
 
 
+@dataclass
+class DeviceAddress:
+    name: str
+    address: Tuple[str, int]
+
+    def __str__(self) -> str:
+        return f"{self.name}@{self.address[0]}:{self.address[1]}"
+
+
 class Device:
-    def __init__(self, name: str, cell_count: int, address: Tuple[str, int], timeout: Optional[float]):
-        self.name = name
-        self.cell_count = cell_count
+    def __init__(self, address: DeviceAddress, cell_count: int, timeout: Optional[float]):
         self.address = address
+        self.cell_count = cell_count
 
-        sock = DeviceSocket(address, timeout)
+        sock = DeviceSocket(address.address, timeout)
 
-        self.controller = Controller(name, sock)
+        self.controller = Controller(address.name, sock)
         """Controller of the device. It contains device global registers"""
 
-        self.cells = [Cell(i + 1, f'{name}[{i + 1}]', sock) for i in range(cell_count)]
+        self.cells = [Cell(i + 1, f'{address.name}[{i + 1}]', sock) for i in range(cell_count)]
         """
         Channels of the device.
         Here cells are indexed starting from 0, but in device they are numbered starting from 1.
@@ -227,7 +236,7 @@ class Device:
         self._socket = sock
 
     def __str__(self):
-        return f'<Device "{self.name}" at {self.address[0]}:{self.address[1]}>'
+        return f'<Device {self.address}>'
 
     def invalidate_cache(self):
         self.controller.invalidate_cache()

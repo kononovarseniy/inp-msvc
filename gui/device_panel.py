@@ -6,7 +6,8 @@ from typing import TypeVar, Generic, Tuple, Callable, List, Optional
 
 from gi.repository import Gtk, GLib, GObject
 
-from device.worker import CellState as RealCellState, DeviceAddress, DeviceState, Worker
+from device.worker import CellState as RealCellState, DeviceState, Worker
+from device.device import DeviceAddress
 from gui.treeview_helpers import TreeModelAdapter, get_row_being_edited
 
 LOGGER = logging.getLogger('device-panel')
