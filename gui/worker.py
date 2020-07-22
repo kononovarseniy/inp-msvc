@@ -220,26 +220,26 @@ class Worker(GObject.Object):
         state = self.get_cell_state(cell_index)
         l, h = state.voltage_range
         if value < l or value > h:
-            raise ValueError('Voltage is out of allowed range')
+            raise ValueError(f'Cell #{cell_index}: Cannot set voltage to {value}. Allowed range is {l}..{h}')
         self._start_modification(cell_index, state.voltage_set, _set_voltage, value)
 
     def set_current_limit(self, cell_index: int, value: float):
         state = self.get_cell_state(cell_index)
         l, h = state.current_limit_range
         if value < l or value > h:
-            raise ValueError('Current limit is out of allowed range')
+            raise ValueError(f'Cell #{cell_index}: Cannot set current limit to {value}. Allowed range is {l}..{h}')
         self._start_modification(cell_index, state.current_limit, _set_current_limit, value)
 
     def set_ramp_up_speed(self, cell_index: int, value: int):
         state = self.get_cell_state(cell_index)
         if value < 1:
-            raise ValueError('Ramp up speed is out of allowed range')
+            raise ValueError(f'Cell #{cell_index}: Cannot set ramp up speed: {value} is out of allowed range')
         self._start_modification(cell_index, state.ramp_up_speed, _set_ramp_up_speed, value)
 
     def set_ramp_down_speed(self, cell_index: int, value: int):
         state = self.get_cell_state(cell_index)
         if value < 1:
-            raise ValueError('Ramp down speed is out of allowed range')
+            raise ValueError(f'Cell #{cell_index}: Cannot set  ramp down speed: {value} is out of allowed range')
         self._start_modification(cell_index, state.ramp_down_speed, _set_ramp_down_speed, value)
 
     @GObject.Signal(name=CELL_UPDATED, arg_types=[int])

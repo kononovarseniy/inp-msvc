@@ -1,9 +1,10 @@
 import logging
 from enum import IntEnum
-from typing import TypeVar, Callable
+from typing import TypeVar, Callable, Any
 
 from gi.repository import Gtk
 
+from gui.error_label import ErrorLabel
 from gui.treeview_helpers import TreeModelAdapter, get_row_being_edited
 from gui.worker import CellState, DeviceParameter, Worker
 
@@ -99,8 +100,11 @@ class DevicePanel(Gtk.Box):
         device_label.set_markup(f'Connected to <b>{self.worker.get_device_address()}</b>')
         grid.attach(device_label, 0, 0, 1, 1)
 
+        self.error_label = ErrorLabel()
+        grid.attach(self.error_label, 1, 0, 1, 1)
+
         self.tree_view, self.adapter = self._make_tree_view()
-        grid.attach(self.tree_view, 0, 1, 1, 1)
+        grid.attach(self.tree_view, 0, 1, 2, 1)
 
         for cell in self.worker.iter_cells():
             self.adapter.append(cell)
@@ -108,7 +112,14 @@ class DevicePanel(Gtk.Box):
         self.add(grid)
 
     def _make_on_changed(self, task):
-        return lambda state, value: task(self.worker, state.cell_index, value)
+        def on_changed(state: CellState, value: Any):
+            try:
+                task(self.worker, state.cell_index, value)
+            except ValueError as e:
+                LOGGER.debug(f'User entered an invalid value: {e}')
+                self.error_label.show_error(str(e))
+
+        return on_changed
 
     def _make_tree_view(self):
         adapter = TreeModelAdapter()
