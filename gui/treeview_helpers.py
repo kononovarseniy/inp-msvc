@@ -40,6 +40,10 @@ class TreeModelAdapter(Generic[T]):
     def __len__(self):
         return len(self.model)
 
+    def row_changed(self, index: int):
+        path = str(index)
+        self.model.row_changed(path, self.model.get_iter(path))
+
     def append(self, row: Any):
         self.model.append([GWrapper(row)])
 

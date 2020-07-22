@@ -1,9 +1,11 @@
 import logging
+from concurrent.futures import Future
 from typing import List, Optional
 
 import gi
 
 from gui import files
+from gui.worker import Worker
 
 gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, GLib
@@ -42,14 +44,21 @@ class MainWindow(Gtk.Window):
 
         notebook = Gtk.Notebook()
 
-        self.panel_init_countdown = len(devices)
         self.panels: List[DevicePanel] = []
-        for dev in devices:
-            panel = DevicePanel()
-            self.panels.append(panel)
-            panel.connect('started', self.on_panel_started)
-            panel.start(dev)
-            notebook.append_page(panel, Gtk.Label(label=dev.name))
+        panels: List[Optional[DevicePanel]] = [None] * len(devices)
+
+        def worker_created(f: 'Future[Worker]'):
+            worker = f.result()
+            index = devices.index(worker.get_device_address())
+            panels[index] = DevicePanel(worker)
+            if all(p is not None for p in panels):
+                for p in panels:
+                    self.panels.append(p)
+                    notebook.append_page(p, Gtk.Label(label=p.worker.get_device_address().name))
+                notebook.show_all()
+
+        for i, dev in enumerate(devices):
+            Worker.create(dev).add_done_callback(lambda f: GLib.idle_add(worker_created, f))
 
         # a grid to attach the widgets
         grid = Gtk.Grid()
@@ -57,15 +66,3 @@ class MainWindow(Gtk.Window):
 
         # attach the grid to the window
         self.add(grid)
-
-    def on_panel_started(self, panel: DevicePanel):
-        panel.start_update()
-        self.panel_init_countdown -= 1
-        if self.panel_init_countdown == 0:
-            GLib.timeout_add(2000, self.on_timer)
-
-    def on_timer(self):
-        for panel in self.panels:
-            panel.start_update()
-
-        return True
