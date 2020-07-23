@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/inp-msvc.iml" filepath="$PROJECT_DIR$/.idea/inp-msvc.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/control-program.iml" filepath="$PROJECT_DIR$/.idea/control-program.iml" />
     </modules>
   </component>
 </project>

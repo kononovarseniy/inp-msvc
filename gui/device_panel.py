@@ -1,5 +1,4 @@
 import logging
-from enum import IntEnum
 from typing import TypeVar, Callable, Any
 
 from gi.repository import Gtk
@@ -75,14 +74,6 @@ def current_limit_range_data_func(cell: Gtk.CellRendererText, state: CellState):
     cell.props.text = f'{l:d}..{h:d}'
 
 
-class _State(IntEnum):
-    STOPPING = 0
-    STOPPED = 1
-    STARTING = 2
-    ERROR = 3
-    STARTED = 4
-
-
 class DevicePanel(Gtk.Box):
 
     def __init__(self, worker: Worker):
@@ -112,12 +103,14 @@ class DevicePanel(Gtk.Box):
         self.add(grid)
 
     def _make_on_changed(self, task):
-        def on_changed(state: CellState, value: Any):
+        def on_changed(state: CellState, value: Any) -> bool:
             try:
                 task(self.worker, state.cell_index, value)
+                return True
             except ValueError as e:
                 LOGGER.debug(f'User entered an invalid value: {e}')
                 self.error_label.show_error(str(e))
+                return False
 
         return on_changed
 

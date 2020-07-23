@@ -2,7 +2,7 @@ import logging
 from concurrent.futures import Future
 from concurrent.futures.thread import ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import Generic, Tuple, List, Callable, TypeVar
+from typing import Generic, Tuple, List, Callable, TypeVar, Optional
 
 from gi.repository import GObject, GLib
 
@@ -24,9 +24,19 @@ class DeviceParameter(Generic[T]):
         self.waiting = waiting
 
     def update_value(self, value: T) -> None:
+        """Update the actual value. If there are pending write commands, then do not change the desired value.
+        If no write commands were received, then change the requested value too"""
         self.actual = value
         if self.waiting > 0:
             self.desired = value
+
+    def set_actual_dec_waiting(self, value: T):
+        self.actual = value
+        self.waiting -= 1
+
+    def set_desired_inc_waiting(self, value: T):
+        self.desired = value
+        self.waiting += 1
 
 
 @dataclass
@@ -55,6 +65,15 @@ class CellState:
     """Allowed voltage range"""
     current_limit_range: Tuple[float, float]
     """Allowed current limit range"""
+
+
+@dataclass
+class CellSettings:
+    enabled: bool
+    voltage: float
+    current_limit: float
+    ramp_up: int
+    ramp_down: int
 
 
 def _read_full_cell_state(cell: Cell) -> CellState:
@@ -133,6 +152,38 @@ def _set_ramp_down_speed(cell: Cell, value: int) -> int:
     return cell.get_ramp_down_speed()
 
 
+def _set_parameters(cell: Cell, settings: CellSettings) -> CellSettings:
+    return CellSettings(
+        _set_output_voltage_enabled(cell, settings.enabled),
+        _set_voltage(cell, settings.voltage),
+        _set_current_limit(cell, settings.current_limit),
+        _set_ramp_up_speed(cell, settings.ramp_up),
+        _set_ramp_down_speed(cell, settings.ramp_down)
+    )
+
+
+def check_voltage_value(state: CellState, value: float):
+    l, h = state.voltage_range
+    if value < l or value > h:
+        raise ValueError(f'Cell #{state.cell_index}: Cannot set voltage to {value}. Allowed range is {l}..{h}')
+
+
+def check_current_value(state: CellState, value: float):
+    l, h = state.current_limit_range
+    if value < l or value > h:
+        raise ValueError(f'Cell #{state.cell_index}: Cannot set current limit to {value}. Allowed range is {l}..{h}')
+
+
+def check_ramp_up_value(state: CellState, value: int):
+    if value < 1:
+        raise ValueError(f'Cell #{state.cell_index}: Cannot set ramp up speed: {value} is out of allowed range')
+
+
+def check_ramp_down_value(state: CellState, value: int):
+    if value < 1:
+        raise ValueError(f'Cell #{state.cell_index}: Cannot set ramp down speed: {value} is out of allowed range')
+
+
 class Worker(GObject.Object):
     """
     This class is responsible for asynchronous access to device parameters.
@@ -191,8 +242,7 @@ class Worker(GObject.Object):
             yield s
 
     def _on_modification_completed(self, f: Future, state: CellState, parameter: DeviceParameter):
-        parameter.update_value(f.result())
-        parameter.waiting -= 1
+        parameter.set_actual_dec_waiting(f.result())
         self.emit(Worker.CELL_UPDATED, state.cell_index)
 
     def _start_modification(self,
@@ -204,13 +254,28 @@ class Worker(GObject.Object):
         cell = self._device.cells[cell_index - 1]
         state = self._state[cell_index - 1]
 
-        parameter.desired = value
-        parameter.waiting += 1
+        parameter.set_desired_inc_waiting(value)
 
         self._executor.submit(task, cell, value).add_done_callback(
             lambda f: GLib.idle_add(self._on_modification_completed, f, state, parameter))
 
         self.emit(Worker.CELL_UPDATED, state.cell_index)
+
+    def _on_cell_modification_completed(self, f: Future, state: CellState):
+        settings: CellSettings = f.result()
+        state.enabled.set_actual_dec_waiting(settings.enabled)
+        state.voltage_set.set_actual_dec_waiting(settings.voltage)
+        state.current_limit.set_actual_dec_waiting(settings.current_limit)
+        state.ramp_up_speed.set_actual_dec_waiting(settings.ramp_up)
+        state.ramp_down_speed.set_actual_dec_waiting(settings.ramp_down)
+        self.emit(Worker.CELL_UPDATED, state.cell_index)
+
+    def _start_cell_modification(self, cell_index: int, settings: CellSettings):
+        cell = self._device.cells[cell_index - 1]
+        state = self._state[cell_index - 1]
+
+        self._executor.submit(_set_parameters, cell, settings).add_done_callback(
+            lambda f: GLib.idle_add(self._on_cell_modification_completed, f, state))
 
     def set_enabled(self, cell_index: int, value: bool):
         state = self.get_cell_state(cell_index)
@@ -218,29 +283,56 @@ class Worker(GObject.Object):
 
     def set_output_voltage(self, cell_index: int, value: float):
         state = self.get_cell_state(cell_index)
-        l, h = state.voltage_range
-        if value < l or value > h:
-            raise ValueError(f'Cell #{cell_index}: Cannot set voltage to {value}. Allowed range is {l}..{h}')
+        check_voltage_value(state, value)
         self._start_modification(cell_index, state.voltage_set, _set_voltage, value)
 
     def set_current_limit(self, cell_index: int, value: float):
         state = self.get_cell_state(cell_index)
-        l, h = state.current_limit_range
-        if value < l or value > h:
-            raise ValueError(f'Cell #{cell_index}: Cannot set current limit to {value}. Allowed range is {l}..{h}')
+        check_current_value(state, value)
         self._start_modification(cell_index, state.current_limit, _set_current_limit, value)
 
     def set_ramp_up_speed(self, cell_index: int, value: int):
         state = self.get_cell_state(cell_index)
-        if value < 1:
-            raise ValueError(f'Cell #{cell_index}: Cannot set ramp up speed: {value} is out of allowed range')
+        check_ramp_up_value(state, value)
         self._start_modification(cell_index, state.ramp_up_speed, _set_ramp_up_speed, value)
 
     def set_ramp_down_speed(self, cell_index: int, value: int):
         state = self.get_cell_state(cell_index)
-        if value < 1:
-            raise ValueError(f'Cell #{cell_index}: Cannot set  ramp down speed: {value} is out of allowed range')
+        check_ramp_down_value(state, value)
         self._start_modification(cell_index, state.ramp_down_speed, _set_ramp_down_speed, value)
+
+    def set_values(self, values: List[Tuple[int, CellSettings]]) -> None:
+        """
+        Set parameters of all device channels.
+
+        :param values: a list of tuples of the form (cell_index, enabled, voltage, current_limit, ramp_up, ramp_down).
+        Cells that are not listed are disabled.
+
+        :raises IndexError: the voltage cell with specified index does not exist.
+        :raises ValueError: when some values are invalid.
+        """
+
+        # Check values and restore order
+        new_values: List[Optional[CellSettings]] = [None] * len(self._state)
+        for cell_index, settings in values:
+            state = self.get_cell_state(cell_index)
+            check_voltage_value(state, settings.voltage)
+            check_current_value(state, settings.current_limit)
+            check_ramp_up_value(state, settings.ramp_up)
+            check_ramp_down_value(state, settings.ramp_down)
+            new_values[cell_index - 1] = settings
+
+        # Set desired values and start modification
+        for cell, settings in zip(self._state, new_values):
+            if settings is None:
+                self.set_enabled(cell.cell_index, False)
+            else:
+                cell.enabled.set_desired_inc_waiting(settings.enabled)
+                cell.voltage_set.set_desired_inc_waiting(settings.voltage)
+                cell.current_limit.set_desired_inc_waiting(settings.current_limit)
+                cell.ramp_up_speed.set_desired_inc_waiting(settings.ramp_up)
+                cell.ramp_down_speed.set_desired_inc_waiting(settings.ramp_down)
+                self._start_cell_modification(cell.cell_index, settings)
 
     @GObject.Signal(name=CELL_UPDATED, arg_types=[int])
     def _on_cell_updated(self, index: int):
