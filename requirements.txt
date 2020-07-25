@@ -1,2 +1,4 @@
+dictionaries==0.0.2
+py-flags==1.1.4
 pycairo==1.19.1
 PyGObject==3.36.1

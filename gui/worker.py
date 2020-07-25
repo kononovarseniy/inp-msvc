@@ -7,6 +7,7 @@ from typing import Generic, Tuple, List, Callable, TypeVar, Optional
 from gi.repository import GObject, GLib
 
 from device.device import DeviceAddress, Device, Cell
+from device.registers import CellCSR
 
 CHANNEL_COUNT = 16
 
@@ -41,6 +42,7 @@ class DeviceParameter(Generic[T]):
 
 @dataclass
 class CellState:
+    """Cell state includes constant cell parameters, cell state and changeable parameters with their desired values"""
     enabled: DeviceParameter[bool]
     """Indicates whether the output voltage is on"""
     voltage_set: DeviceParameter[float]
@@ -57,6 +59,8 @@ class CellState:
     """Measured output voltage in volts"""
     current_measured: float
     """Measured current in uA"""
+    csr: CellCSR
+    """Cell control, status register"""
 
     # Constant values
     cell_index: int
@@ -69,11 +73,20 @@ class CellState:
 
 @dataclass
 class CellSettings:
+    """Contains values of writable cell parameters"""
     enabled: bool
     voltage: float
     current_limit: float
     ramp_up: int
     ramp_down: int
+
+
+@dataclass
+class CellValues(CellSettings):
+    """Contains values that represent cell status"""
+    voltage_measured: float
+    current_measured: float
+    csr: CellCSR
 
 
 def _read_full_cell_state(cell: Cell) -> CellState:
@@ -85,6 +98,7 @@ def _read_full_cell_state(cell: Cell) -> CellState:
         DeviceParameter(cell.get_ramp_down_speed()),
         cell.get_measured_voltage(),
         cell.get_measured_current(),
+        cell.get_csr(),
         cell.get_index(),
         cell.get_output_voltage_range(),
         cell.get_current_limit_range()
@@ -95,8 +109,8 @@ def _read_full_state(device: Device) -> List[CellState]:
     return [_read_full_cell_state(cell) for cell in device.cells]
 
 
-def _read_cell_state(cell: Cell) -> Tuple:
-    return (
+def _read_cell_state(cell: Cell) -> CellValues:
+    return CellValues(
         cell.is_output_voltage_enabled(),
         cell.get_output_voltage(),
         cell.get_current_limit(),
@@ -104,20 +118,22 @@ def _read_cell_state(cell: Cell) -> Tuple:
         cell.get_ramp_down_speed(),
         cell.get_measured_voltage(),
         cell.get_measured_current(),
+        cell.get_csr()
     )
 
 
-def _update_state(state: CellState, values: Tuple) -> None:
-    state.enabled.update_value(values[0])
-    state.voltage_set.update_value(values[1])
-    state.current_limit.update_value(values[2])
-    state.ramp_up_speed.update_value(values[3])
-    state.ramp_down_speed.update_value(values[4])
-    state.voltage_measured = values[5]
-    state.current_measured = values[6]
+def _update_state(state: CellState, values: CellValues) -> None:
+    state.enabled.update_value(values.enabled)
+    state.voltage_set.update_value(values.voltage)
+    state.current_limit.update_value(values.current_limit)
+    state.ramp_up_speed.update_value(values.ramp_up)
+    state.ramp_down_speed.update_value(values.ramp_down)
+    state.voltage_measured = values.voltage_measured
+    state.current_measured = values.current_measured
+    state.csr = values.csr
 
 
-def _read_state(device: Device) -> List[Tuple]:
+def _read_state(device: Device) -> List[CellValues]:
     return [_read_cell_state(cell) for cell in device.cells]
 
 
@@ -342,7 +358,7 @@ class Worker(GObject.Object):
     def _on_updated(self):
         pass
 
-    def _on_update_completed(self, f: 'Future[List[Tuple]]'):
+    def _on_update_completed(self, f: 'Future[List[CellValues]]'):
         res = f.result()
         for c, s in zip(self._state, res):
             _update_state(c, s)

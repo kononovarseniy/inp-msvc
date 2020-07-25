@@ -1,5 +1,14 @@
 from enum import IntEnum
 
+from flags import Flags
+
+
+class ControllerCSR(Flags):
+    temperature_protection = 0x1
+    low_voltage_error = 0x2
+    base_voltage_error = 0x4
+    high_voltage_protection_active = 0x8
+
 
 class ControllerRegister(IntEnum):
     cell_id = 0x00
@@ -64,6 +73,19 @@ class ControllerRegister(IntEnum):
 
     WrFlash = 0x1f
     """(write only) WrFlash ‐ writing to this address will store ALL"""
+
+
+class CellCSR(Flags):
+    channel_on_state = 0x1
+    error = 0x2
+    accumulated_error = 0x4
+    current_overload = 0x8
+    base_voltage_error = 0x10
+    hardware_failure_error = 0x20
+    ramp_up_active = 0x40
+    ramp_down_active = 0x80
+    standby = 0x100
+    io_protection = 0x200
 
 
 class CellRegister(IntEnum):

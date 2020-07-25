@@ -5,7 +5,7 @@ from typing import Union, Optional, Tuple, Dict
 
 from device.command import Command, CommandType, CommandResponse, encode_command, RESPONSE_LENGTH, decode_response
 from device.helpers import code_to_float, float_to_code
-from device.registers import CellRegister, ControllerRegister
+from device.registers import CellRegister, ControllerRegister, CellCSR
 
 _log = logging.getLogger("Device")
 
@@ -111,6 +111,9 @@ class Cell:
     def get_index(self) -> int:
         """Cell index, numbering from one"""
         return self._cell
+
+    def get_csr(self) -> CellCSR:
+        return CellCSR(self.registers.read(CellRegister.ctl_stat))
 
     def get_measured_voltage(self):
         adc = self.registers.read(CellRegister.Vmes)

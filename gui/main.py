@@ -54,7 +54,7 @@ class MainWindow(Gtk.Window):
         super().__init__()
         self.set_title('BINP muon system voltage controller')
         self.set_border_width(0)
-        self.set_default_size(640, 480)
+        self.set_default_size(700, 480)
 
         notebook = Gtk.Notebook()
 

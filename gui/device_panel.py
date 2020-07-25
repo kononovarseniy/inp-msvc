@@ -1,11 +1,19 @@
 import logging
 from typing import TypeVar, Callable, Any
 
-from gi.repository import Gtk
+from gi.repository import Gtk, Gdk
 
 from gui.error_label import ErrorLabel
 from gui.treeview_helpers import TreeModelAdapter, get_row_being_edited
 from gui.worker import CellState, DeviceParameter, Worker
+
+STATUS_HELP_TEXT = """* Errors:
+\tE\tError
+\tI\tCurrent overload
+\tB\tBase voltage error
+\tH\tHardware failure
+\tS\tStandby regime (current limiting)
+\tP\tI/O Protection active"""
 
 LOGGER = logging.getLogger('device-panel')
 T = TypeVar('T')
@@ -46,6 +54,8 @@ def cell_enabled_data_func(cell: Gtk.CellRendererToggle, state: CellState):
 def measured_voltage_data_func(cell: Gtk.CellRenderer, state: CellState):
     v_set = state.voltage_set.actual
     v_mes = state.voltage_measured
+    up = state.csr.ramp_up_active
+    down = state.csr.ramp_down_active
     en = state.enabled.actual
 
     if en:
@@ -53,7 +63,13 @@ def measured_voltage_data_func(cell: Gtk.CellRenderer, state: CellState):
     else:
         bad = v_mes > 5
 
-    render_cell(cell, f'{v_mes:.2f}', 'error' if bad else 'ok', False)
+    slope = ''
+    if up:
+        slope = '↑ '
+    if down:
+        slope = '↓ '
+
+    render_cell(cell, f'<b>{slope}</b>{v_mes:.2f}', 'error' if bad else 'ok', False)
 
 
 def measured_current_data_func(cell: Gtk.CellRenderer, state: CellState):
@@ -74,6 +90,24 @@ def current_limit_range_data_func(cell: Gtk.CellRendererText, state: CellState):
     cell.props.text = f'{l:d}..{h:d}'
 
 
+def cell_status_data_func(cell: Gtk.CellRendererText, state: CellState):
+    msg = ''
+    if state.csr.error:
+        msg += 'E'
+    if state.csr.current_overload:
+        msg += 'I'
+    if state.csr.base_voltage_error:
+        msg += 'B'
+    if state.csr.hardware_failure_error:
+        msg += 'H'
+    if state.csr.standby:
+        msg += 'S'
+    if state.csr.io_protection:
+        msg += 'P'
+
+    render_cell(cell, msg if msg else '--', 'error' if msg else 'ok', False)
+
+
 class DevicePanel(Gtk.Box):
 
     def __init__(self, worker: Worker):
@@ -85,6 +119,10 @@ class DevicePanel(Gtk.Box):
         grid = Gtk.Grid()
         grid.set_column_spacing(4)
         grid.set_row_spacing(4)
+        grid.set_margin_top(4)
+        grid.set_margin_left(4)
+        grid.set_margin_right(4)
+        self.override_background_color(Gtk.StateType.NORMAL, Gdk.RGBA.from_color(Gdk.color_parse('white')))
 
         device_label = Gtk.Label()
         device_label.set_xalign(0)
@@ -95,7 +133,17 @@ class DevicePanel(Gtk.Box):
         grid.attach(self.error_label, 1, 0, 1, 1)
 
         self.tree_view, self.adapter = self._make_tree_view()
-        grid.attach(self.tree_view, 0, 1, 2, 1)
+        scroll = Gtk.ScrolledWindow()
+        scroll.add(self.tree_view)
+        scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.NEVER)
+        frame = Gtk.Frame()
+        frame.add(scroll)
+        frame.set_hexpand(True)
+        grid.attach(frame, 0, 1, 2, 1)
+
+        status_help = Gtk.Label(label=STATUS_HELP_TEXT)
+        status_help.set_xalign(0)
+        grid.attach(status_help, 0, 2, 1, 1)
 
         for cell in self.worker.iter_cells():
             self.adapter.append(cell)
@@ -147,6 +195,7 @@ class DevicePanel(Gtk.Box):
                                    make_parameter_data_func(lambda s: s.ramp_down_speed),
                                    int, self._make_on_changed(Worker.set_ramp_down_speed))
 
+        adapter.append_text_column(tree_view, 'Errors\n*', cell_status_data_func)
         adapter.append_text_column(tree_view, 'Voltage\nrange, V', voltage_range_data_func)
         adapter.append_text_column(tree_view, 'Current limit\nrange, uA', current_limit_range_data_func)
 
