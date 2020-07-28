@@ -5,7 +5,7 @@ from typing import Union, Optional, Tuple, Dict
 
 from device.command import Command, CommandType, CommandResponse, encode_command, RESPONSE_LENGTH, decode_response
 from device.helpers import code_to_float, float_to_code
-from device.registers import CellRegister, ControllerRegister, CellCSR
+from device.registers import CellRegister, ControllerRegister, CellCSR, ControllerSR, TemperatureSensor
 
 _log = logging.getLogger("Device")
 
@@ -88,6 +88,57 @@ class Controller:
 
     def invalidate_cache(self):
         self.registers.invalidate_cache()
+
+    def get_status(self) -> ControllerSR:
+        return ControllerSR(self.registers.read(ControllerRegister.status))
+
+    def set_base_voltage_enabled(self, enabled: bool) -> bool:
+        return self.registers.write(ControllerRegister.BVON, 1 if enabled else 0) != 0
+
+    def get_base_voltage_enabled(self) -> bool:
+        return self.registers.read(ControllerRegister.BVON) != 0
+
+    def get_processor_temperature(self) -> int:
+        return self.registers.read(ControllerRegister.Tup)
+
+    def get_board_temperature(self) -> int:
+        return self.registers.read(ControllerRegister.Tbrd)
+
+    def get_power_supply_temperature(self) -> int:
+        return self.registers.read(ControllerRegister.Tps)
+
+    def get_low_voltage(self) -> float:
+        return self.registers.read(ControllerRegister.LV) / 10
+
+    def get_base_voltage(self) -> float:
+        return self.registers.read(ControllerRegister.BV) / 10
+
+    def set_fan_off_temperature(self, value: int) -> int:
+        return self.registers.write(ControllerRegister.T_fan_off, value)
+
+    def get_fan_off_temperature(self) -> int:
+        return self.registers.read(ControllerRegister.T_fan_off)
+
+    def set_fan_on_temperature(self, value: int) -> int:
+        return self.registers.write(ControllerRegister.T_fan_on, value)
+
+    def get_fan_on_temperature(self) -> int:
+        return self.registers.read(ControllerRegister.T_fan_on)
+
+    def set_shutdown_temperature(self, value: int) -> int:
+        return self.registers.write(ControllerRegister.T_shutdown, value)
+
+    def get_shutdown_temperature(self) -> int:
+        return self.registers.read(ControllerRegister.T_shutdown)
+
+    def set_temperature_sensor(self, sensor: TemperatureSensor):
+        return TemperatureSensor(self.registers.write(ControllerRegister.NTsens, sensor))
+
+    def get_temperature_sensor(self) -> TemperatureSensor:
+        return TemperatureSensor(self.registers.read(ControllerRegister.NTsens))
+
+    def get_serial(self) -> int:
+        return self.registers.read(ControllerRegister.CserNr)
 
 
 class Cell:

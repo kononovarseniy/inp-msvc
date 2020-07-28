@@ -3,7 +3,13 @@ from enum import IntEnum
 from flags import Flags
 
 
-class ControllerCSR(Flags):
+class TemperatureSensor(IntEnum):
+    microprocessor = 0
+    board = 1
+    power_supply = 2
+
+
+class ControllerSR(Flags):
     temperature_protection = 0x1
     low_voltage_error = 0x2
     base_voltage_error = 0x4

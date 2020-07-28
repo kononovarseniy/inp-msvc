@@ -68,7 +68,7 @@ class MainWindow(Gtk.Window):
             panels[index] = DevicePanel(worker)
             if profile is not None:
                 try:
-                    worker.set_values(profile[address.name])
+                    worker.apply_settings_to_cells(profile[address.name])
                 except ValueError as e:
                     LOGGER.error(f'Unable to load values from profile: {address} {e}')
             if all(p is not None for p in panels):

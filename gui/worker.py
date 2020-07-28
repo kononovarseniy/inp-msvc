@@ -6,8 +6,8 @@ from typing import Generic, Tuple, List, Callable, TypeVar, Optional
 
 from gi.repository import GObject, GLib
 
-from device.device import DeviceAddress, Device, Cell
-from device.registers import CellCSR
+from device.device import DeviceAddress, Device, Cell, Controller
+from device.registers import CellCSR, ControllerSR, TemperatureSensor
 
 CHANNEL_COUNT = 16
 
@@ -89,7 +89,74 @@ class CellValues(CellSettings):
     csr: CellCSR
 
 
-def _read_full_cell_state(cell: Cell) -> CellState:
+@dataclass
+class ControllerState:
+    base_voltage_enabled: DeviceParameter[bool]
+    fan_off_temp: DeviceParameter[int]
+    fan_on_temp: DeviceParameter[int]
+    shutdown_temp: DeviceParameter[int]
+    temp_sensor: DeviceParameter[TemperatureSensor]
+
+    status: ControllerSR
+    processor_temp: int
+    board_temp: int
+    power_supply_temp: int
+    low_voltage: float
+    base_voltage: float
+
+
+@dataclass
+class ControllerSettings:
+    base_voltage_on: bool
+    fan_off_temp: int
+    fan_on_temp: int
+    shutdown_temp: int
+    temp_sensor: TemperatureSensor
+
+
+@dataclass
+class ControllerValues(ControllerSettings):
+    status: ControllerSR
+    processor_temp: int
+    board_temp: int
+    power_supply_temp: int
+    low_voltage: float
+    base_voltage: float
+
+
+def _read_controller_values(ctl: Controller) -> ControllerValues:
+    return ControllerValues(
+        ctl.get_base_voltage_enabled(),
+        ctl.get_fan_off_temperature(),
+        ctl.get_fan_on_temperature(),
+        ctl.get_shutdown_temperature(),
+        ctl.get_temperature_sensor(),
+        ctl.get_status(),
+        ctl.get_processor_temperature(),
+        ctl.get_board_temperature(),
+        ctl.get_power_supply_temperature(),
+        ctl.get_low_voltage(),
+        ctl.get_base_voltage()
+    )
+
+
+def _read_controller_state(ctl: Controller) -> ControllerState:
+    return ControllerState(
+        DeviceParameter(ctl.get_base_voltage_enabled()),
+        DeviceParameter(ctl.get_fan_off_temperature()),
+        DeviceParameter(ctl.get_fan_on_temperature()),
+        DeviceParameter(ctl.get_shutdown_temperature()),
+        DeviceParameter(ctl.get_temperature_sensor()),
+        ctl.get_status(),
+        ctl.get_processor_temperature(),
+        ctl.get_board_temperature(),
+        ctl.get_power_supply_temperature(),
+        ctl.get_low_voltage(),
+        ctl.get_base_voltage()
+    )
+
+
+def _read_cell_state(cell: Cell) -> CellState:
     return CellState(
         DeviceParameter(cell.is_output_voltage_enabled()),
         DeviceParameter(cell.get_output_voltage()),
@@ -105,11 +172,7 @@ def _read_full_cell_state(cell: Cell) -> CellState:
     )
 
 
-def _read_full_state(device: Device) -> List[CellState]:
-    return [_read_full_cell_state(cell) for cell in device.cells]
-
-
-def _read_cell_state(cell: Cell) -> CellValues:
+def _read_cell_values(cell: Cell) -> CellValues:
     return CellValues(
         cell.is_output_voltage_enabled(),
         cell.get_output_voltage(),
@@ -122,25 +185,44 @@ def _read_cell_state(cell: Cell) -> CellValues:
     )
 
 
-def _update_state(state: CellState, values: CellValues) -> None:
+def _read_device_values(device: Device) -> Tuple[ControllerValues, List[CellValues]]:
+    return _read_controller_values(device.controller), list(map(_read_cell_values, device.cells))
+
+
+def _read_device_state(device: Device) -> Tuple[ControllerState, List[CellState]]:
+    return _read_controller_state(device.controller), list(map(_read_cell_state, device.cells))
+
+
+def _update_controller_state(state: ControllerState, values: ControllerValues) -> None:
+    state.base_voltage_enabled.update_value(values.base_voltage_on)
+    state.fan_off_temp.update_value(values.fan_off_temp)
+    state.fan_on_temp.update_value(values.fan_on_temp)
+    state.temp_sensor.update_value(values.temp_sensor)
+
+    state.status = values.status
+    state.processor_temp = values.processor_temp
+    state.board_temp = values.board_temp
+    state.power_supply_temp = values.power_supply_temp
+    state.low_voltage = values.low_voltage
+    state.base_voltage = values.base_voltage
+
+
+def _update_cell_state(state: CellState, values: CellValues) -> None:
     state.enabled.update_value(values.enabled)
     state.voltage_set.update_value(values.voltage)
     state.current_limit.update_value(values.current_limit)
     state.ramp_up_speed.update_value(values.ramp_up)
     state.ramp_down_speed.update_value(values.ramp_down)
+
     state.voltage_measured = values.voltage_measured
     state.current_measured = values.current_measured
     state.csr = values.csr
 
 
-def _read_state(device: Device) -> List[CellValues]:
-    return [_read_cell_state(cell) for cell in device.cells]
-
-
 def _connect(executor: ThreadPoolExecutor, address: DeviceAddress) -> 'Worker':
     dev = Device(address, CHANNEL_COUNT, SOCKET_TIMEOUT)
-    state = _read_full_state(dev)
-    return Worker(executor, dev, state)
+    ctl, cells = _read_device_state(dev)
+    return Worker(executor, dev, ctl, cells)
 
 
 def _set_output_voltage_enabled(cell: Cell, value: bool) -> bool:
@@ -168,13 +250,23 @@ def _set_ramp_down_speed(cell: Cell, value: int) -> int:
     return cell.get_ramp_down_speed()
 
 
-def _set_parameters(cell: Cell, settings: CellSettings) -> CellSettings:
+def _apply_cell_settings(cell: Cell, settings: CellSettings) -> CellSettings:
     return CellSettings(
         _set_output_voltage_enabled(cell, settings.enabled),
         _set_voltage(cell, settings.voltage),
         _set_current_limit(cell, settings.current_limit),
         _set_ramp_up_speed(cell, settings.ramp_up),
         _set_ramp_down_speed(cell, settings.ramp_down)
+    )
+
+
+def _apply_controller_settings(ctl: Controller, settings: ControllerSettings) -> ControllerSettings:
+    return ControllerSettings(
+        ctl.set_base_voltage_enabled(settings.base_voltage_on),
+        ctl.set_fan_off_temperature(settings.fan_off_temp),
+        ctl.set_fan_on_temperature(settings.fan_on_temp),
+        ctl.set_shutdown_temperature(settings.shutdown_temp),
+        ctl.set_temperature_sensor(settings.temp_sensor)
     )
 
 
@@ -208,13 +300,16 @@ class Worker(GObject.Object):
     """
     CELL_UPDATED = 'cell-updated'
     UPDATED = 'updated'
+    CONTROLLER_UPDATED = 'controller-updated'
 
-    def __init__(self, executor: ThreadPoolExecutor, device: Device, state: List[CellState]):
+    def __init__(self, executor: ThreadPoolExecutor, device: Device,
+                 ctl_state: ControllerState, cells_state: List[CellState]):
         """This method is for internal use only. Use Worker.create(address) instead."""
         super().__init__()
         self._executor = executor
         self._device = device
-        self._state = state
+        self._state = cells_state
+        self._controller_state = ctl_state
         GLib.timeout_add(10000, self._on_timer)
 
     def get_device_address(self) -> DeviceAddress:
@@ -257,16 +352,15 @@ class Worker(GObject.Object):
         for s in self._state:
             yield s
 
+    def get_controller_state(self) -> ControllerState:
+        return self._controller_state
+
     def _on_modification_completed(self, f: Future, state: CellState, parameter: DeviceParameter):
         parameter.set_actual_dec_waiting(f.result())
         self.emit(Worker.CELL_UPDATED, state.cell_index)
 
-    def _start_modification(self,
-                            cell_index: int,
-                            parameter: DeviceParameter[T],
-                            task: Callable[[Cell, T], T],
-                            value: T):
-
+    def _start_modification(self, cell_index: int, parameter: DeviceParameter[T],
+                            task: Callable[[Cell, T], T], value: T):
         cell = self._device.cells[cell_index - 1]
         state = self._state[cell_index - 1]
 
@@ -276,6 +370,18 @@ class Worker(GObject.Object):
             lambda f: GLib.idle_add(self._on_modification_completed, f, state, parameter))
 
         self.emit(Worker.CELL_UPDATED, state.cell_index)
+
+    def _on_ctl_modification_completed(self, f: Future, parameter: DeviceParameter):
+        parameter.set_actual_dec_waiting(f.result())
+        self.emit(Worker.CONTROLLER_UPDATED)
+
+    def _start_ctl_modification(self, parameter: DeviceParameter[T], task: Callable[[Controller, T], T], value: T):
+        parameter.set_desired_inc_waiting(value)
+
+        self._executor.submit(task, self._device.controller, value).add_done_callback(
+            lambda f: GLib.idle_add(self._on_ctl_modification_completed, f, parameter))
+
+        self.emit(Worker.CONTROLLER_UPDATED)
 
     def _on_cell_modification_completed(self, f: Future, state: CellState):
         settings: CellSettings = f.result()
@@ -290,7 +396,7 @@ class Worker(GObject.Object):
         cell = self._device.cells[cell_index - 1]
         state = self._state[cell_index - 1]
 
-        self._executor.submit(_set_parameters, cell, settings).add_done_callback(
+        self._executor.submit(_apply_cell_settings, cell, settings).add_done_callback(
             lambda f: GLib.idle_add(self._on_cell_modification_completed, f, state))
 
     def set_enabled(self, cell_index: int, value: bool):
@@ -317,7 +423,7 @@ class Worker(GObject.Object):
         check_ramp_down_value(state, value)
         self._start_modification(cell_index, state.ramp_down_speed, _set_ramp_down_speed, value)
 
-    def set_values(self, values: List[Tuple[int, CellSettings]]) -> None:
+    def apply_settings_to_cells(self, values: List[Tuple[int, CellSettings]]) -> None:
         """
         Set parameters of all device channels.
 
@@ -350,6 +456,26 @@ class Worker(GObject.Object):
                 cell.ramp_down_speed.set_desired_inc_waiting(settings.ramp_down)
                 self._start_cell_modification(cell.cell_index, settings)
 
+    def set_base_voltage_enabled(self, enabled: bool):
+        self._start_ctl_modification(self._controller_state.base_voltage_enabled,
+                                     Controller.set_base_voltage_enabled, enabled)
+
+    def set_fan_off_temp(self, value: int):
+        self._start_ctl_modification(self._controller_state.fan_off_temp,
+                                     Controller.set_fan_off_temperature, value)
+
+    def set_fan_on_temp(self, value: int):
+        self._start_ctl_modification(self._controller_state.fan_on_temp,
+                                     Controller.set_fan_on_temperature, value)
+
+    def set_shutdown_temp(self, value: int):
+        self._start_ctl_modification(self._controller_state.shutdown_temp,
+                                     Controller.set_shutdown_temperature, value)
+
+    def set_temp_sensor(self, sensor: TemperatureSensor):
+        self._start_ctl_modification(self._controller_state.temp_sensor,
+                                     Controller.set_temperature_sensor, sensor)
+
     @GObject.Signal(name=CELL_UPDATED, arg_types=[int])
     def _on_cell_updated(self, index: int):
         pass
@@ -358,15 +484,21 @@ class Worker(GObject.Object):
     def _on_updated(self):
         pass
 
-    def _on_update_completed(self, f: 'Future[List[CellValues]]'):
-        res = f.result()
-        for c, s in zip(self._state, res):
-            _update_state(c, s)
+    @GObject.Signal(name=CONTROLLER_UPDATED)
+    def _on_controller_updated(self):
+        pass
+
+    def _on_update_completed(self, f: 'Future[Tuple[ControllerValues, List[CellValues]]]'):
+        ctl, cells = f.result()
+        _update_controller_state(self._controller_state, ctl)
+        self.emit(Worker.CONTROLLER_UPDATED)
+        for c, s in zip(self._state, cells):
+            _update_cell_state(c, s)
             self.emit(Worker.CELL_UPDATED, c.cell_index)
         self.emit(Worker.UPDATED)
 
     def _on_timer(self):
-        self._executor.submit(_read_state, self._device).add_done_callback(
+        self._executor.submit(_read_device_values, self._device).add_done_callback(
             lambda f: GLib.idle_add(self._on_update_completed, f))
         return True
 
