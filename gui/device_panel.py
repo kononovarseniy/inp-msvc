@@ -118,7 +118,7 @@ def cell_status_data_func(cell: Gtk.CellRendererText, state: CellState):
     if state.csr.io_protection:
         msg += 'P'
 
-    render_cell(cell, msg if msg else '--', 'error' if msg else 'ok', False)
+    render_cell(cell, msg if msg else '\u2014', 'error' if msg else 'ok', False)
 
 
 class NumberEntry(Gtk.Entry, Gtk.Editable):
@@ -237,7 +237,9 @@ class DevicePanel(Gtk.Box):
 
         hbox = Gtk.Box()
         hbox.set_orientation(Gtk.Orientation.HORIZONTAL)
-        hbox.pack_start(self._make_controller_dashboard(), True, True, 0)
+        align = Gtk.Alignment(xalign=0)
+        align.add(self._make_controller_dashboard())
+        hbox.pack_start(align, False, True, 0)
         hbox.pack_start(status_help, False, False, 0)
         grid.attach(hbox, 0, 2, 2, 1)
 

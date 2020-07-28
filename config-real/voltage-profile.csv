@@ -1,0 +1,5 @@
+device, cell_index, enabled,    voltage,    current_limit,  ramp_up,    ramp_down
+dev_86, 1,          false,      350,        123,            10,         20
+dev_86, 2,          false,      351,        124,            11,         21
+dev_86, 4,          false,      353,        126,            13,         23
+dev_88, 4,          false,      353,        126,            13,         23

@@ -1,6 +1,6 @@
 import logging
 from concurrent.futures import Future
-from typing import List, Optional
+from typing import List
 
 from gi.repository import Gtk, GLib
 
@@ -52,33 +52,42 @@ class MainWindow(Gtk.Window):
 
     def __init__(self, devices: List[DeviceAddress], profile: files.Profile):
         super().__init__()
-        self.set_title('BINP muon system voltage controller')
+        self.set_title('Muon system voltage controller')
         self.set_border_width(0)
         self.set_default_size(700, 480)
 
         notebook = Gtk.Notebook()
-
-        self.panels: List[DevicePanel] = []
-        panels: List[Optional[DevicePanel]] = [None] * len(devices)
+        notebook.set_hexpand(True)
+        notebook.set_vexpand(True)
+        dev_to_tab = dict()
 
         def worker_created(f: 'Future[Worker]'):
             worker = f.result()
             address = worker.get_device_address()
-            index = devices.index(address)
-            panels[index] = DevicePanel(worker)
+            panel = DevicePanel(worker)
+            tab = dev_to_tab[address]
+            for c in tab.get_children():
+                tab.remove(c)
+            tab.pack_start(panel, True, True, 0)
+            notebook.show_all()
+
             if profile is not None:
                 try:
                     worker.apply_settings_to_cells(profile[address.name])
                 except ValueError as e:
                     LOGGER.error(f'Unable to load values from profile: {address} {e}')
-            if all(p is not None for p in panels):
-                for p in panels:
-                    self.panels.append(p)
-                    notebook.append_page(p, Gtk.Label(label=p.worker.get_device_address().name))
-                notebook.show_all()
 
         for i, dev in enumerate(devices):
+            container = Gtk.Box()
+            label = Gtk.Label()
+            label.set_markup(f'Connecting to <b>{dev}</b>')
+            container.pack_start(label, True, True, 0)
+            dev_to_tab[dev] = container
+            notebook.append_page(container, Gtk.Label(label=dev.name))
+
             Worker.create(dev).add_done_callback(lambda f: GLib.idle_add(worker_created, f))
+
+        notebook.show_all()
 
         # a grid to attach the widgets
         grid = Gtk.Grid()

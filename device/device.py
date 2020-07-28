@@ -262,7 +262,7 @@ class Cell:
         return self.registers.read(CellRegister.rdwnspeed)
 
 
-@dataclass
+@dataclass(eq=True, frozen=True)
 class DeviceAddress:
     name: str
     address: Tuple[str, int]
