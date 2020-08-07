@@ -28,7 +28,7 @@ class DeviceParameter(Generic[T]):
         """Update the actual value. If there are pending write commands, then do not change the desired value.
         If no write commands were received, then change the requested value too"""
         self.actual = value
-        if self.waiting > 0:
+        if self.waiting == 0:
             self.desired = value
 
     def set_actual_dec_waiting(self, value: T):
@@ -225,38 +225,13 @@ def _connect(executor: ThreadPoolExecutor, address: DeviceAddress) -> 'Worker':
     return Worker(executor, dev, ctl, cells)
 
 
-def _set_output_voltage_enabled(cell: Cell, value: bool) -> bool:
-    cell.set_output_voltage_enabled(value)
-    return cell.is_output_voltage_enabled()
-
-
-def _set_voltage(cell: Cell, value: float) -> float:
-    cell.set_output_voltage(value)
-    return cell.get_output_voltage()
-
-
-def _set_current_limit(cell: Cell, value: float) -> float:
-    cell.set_current_limit(value)
-    return cell.get_current_limit()
-
-
-def _set_ramp_up_speed(cell: Cell, value: int) -> int:
-    cell.set_ramp_up_speed(value)
-    return cell.get_ramp_up_speed()
-
-
-def _set_ramp_down_speed(cell: Cell, value: int) -> int:
-    cell.set_ramp_down_speed(value)
-    return cell.get_ramp_down_speed()
-
-
 def _apply_cell_settings(cell: Cell, settings: CellSettings) -> CellSettings:
     return CellSettings(
-        _set_output_voltage_enabled(cell, settings.enabled),
-        _set_voltage(cell, settings.voltage),
-        _set_current_limit(cell, settings.current_limit),
-        _set_ramp_up_speed(cell, settings.ramp_up),
-        _set_ramp_down_speed(cell, settings.ramp_down)
+        cell.set_output_voltage_enabled(settings.enabled),
+        cell.set_output_voltage(settings.voltage),
+        cell.set_current_limit(settings.current_limit),
+        cell.set_ramp_up_speed(settings.ramp_up),
+        cell.set_ramp_down_speed(settings.ramp_down)
     )
 
 
@@ -356,13 +331,16 @@ class Worker(GObject.Object):
         return self._controller_state
 
     def _on_modification_completed(self, f: Future, state: CellState, parameter: DeviceParameter):
-        parameter.set_actual_dec_waiting(f.result())
+        result = f.result()
+        LOGGER.debug(f'Modification of cell #{state.cell_index} completed. Value: {result}')
+        parameter.set_actual_dec_waiting(result)
         self.emit(Worker.CELL_UPDATED, state.cell_index)
 
     def _start_modification(self, cell_index: int, parameter: DeviceParameter[T],
                             task: Callable[[Cell, T], T], value: T):
         cell = self._device.cells[cell_index - 1]
         state = self._state[cell_index - 1]
+        LOGGER.debug(f'Writing value {value} to cell {cell_index} using {task}')
 
         parameter.set_desired_inc_waiting(value)
 
@@ -390,6 +368,8 @@ class Worker(GObject.Object):
         state.current_limit.set_actual_dec_waiting(settings.current_limit)
         state.ramp_up_speed.set_actual_dec_waiting(settings.ramp_up)
         state.ramp_down_speed.set_actual_dec_waiting(settings.ramp_down)
+        LOGGER.debug(
+            f'updated {settings.enabled} {settings.voltage} {settings.current_limit} {settings.ramp_up} {settings.ramp_down}')
         self.emit(Worker.CELL_UPDATED, state.cell_index)
 
     def _start_cell_modification(self, cell_index: int, settings: CellSettings):
@@ -401,27 +381,27 @@ class Worker(GObject.Object):
 
     def set_enabled(self, cell_index: int, value: bool):
         state = self.get_cell_state(cell_index)
-        self._start_modification(cell_index, state.enabled, _set_output_voltage_enabled, bool(value))
+        self._start_modification(cell_index, state.enabled, Cell.set_output_voltage_enabled, bool(value))
 
     def set_output_voltage(self, cell_index: int, value: float):
         state = self.get_cell_state(cell_index)
         check_voltage_value(state, value)
-        self._start_modification(cell_index, state.voltage_set, _set_voltage, value)
+        self._start_modification(cell_index, state.voltage_set, Cell.set_output_voltage, value)
 
     def set_current_limit(self, cell_index: int, value: float):
         state = self.get_cell_state(cell_index)
         check_current_value(state, value)
-        self._start_modification(cell_index, state.current_limit, _set_current_limit, value)
+        self._start_modification(cell_index, state.current_limit, Cell.set_current_limit, value)
 
     def set_ramp_up_speed(self, cell_index: int, value: int):
         state = self.get_cell_state(cell_index)
         check_ramp_up_value(state, value)
-        self._start_modification(cell_index, state.ramp_up_speed, _set_ramp_up_speed, value)
+        self._start_modification(cell_index, state.ramp_up_speed, Cell.set_ramp_up_speed, value)
 
     def set_ramp_down_speed(self, cell_index: int, value: int):
         state = self.get_cell_state(cell_index)
         check_ramp_down_value(state, value)
-        self._start_modification(cell_index, state.ramp_down_speed, _set_ramp_down_speed, value)
+        self._start_modification(cell_index, state.ramp_down_speed, Cell.set_ramp_down_speed, value)
 
     def apply_settings_to_cells(self, values: List[Tuple[int, CellSettings]]) -> None:
         """

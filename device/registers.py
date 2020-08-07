@@ -88,8 +88,8 @@ class CellCSR(Flags):
     current_overload = 0x8
     base_voltage_error = 0x10
     hardware_failure_error = 0x20
-    ramp_up_active = 0x40
-    ramp_down_active = 0x80
+    ramp_down_active = 0x40
+    ramp_up_active = 0x80
     standby = 0x100
     io_protection = 0x200
 

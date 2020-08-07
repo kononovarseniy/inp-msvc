@@ -166,7 +166,7 @@ class Cell:
     def get_csr(self) -> CellCSR:
         return CellCSR(self.registers.read(CellRegister.ctl_stat))
 
-    def get_measured_voltage(self):
+    def get_measured_voltage(self) -> float:
         adc = self.registers.read(CellRegister.Vmes)
         adc_max = self.registers.read_cached(CellRegister.Umesmax)
         try:
@@ -175,7 +175,7 @@ class Cell:
             _log.exception('get_measured_voltage:Incorrect device state')
             raise
 
-    def get_measured_current(self):
+    def get_measured_current(self) -> float:
         adc = self.registers.read(CellRegister.Imes)
         adc_max = self.registers.read_cached(CellRegister.Imesmax)
         try:
@@ -187,7 +187,7 @@ class Cell:
     def get_current_limit_range(self) -> Tuple[float, float]:
         return 0, self.registers.read_cached(CellRegister.Imax)
 
-    def set_current_limit(self, limit: float):
+    def set_current_limit(self, limit: float) -> float:
         r_min, r_max = self.get_current_limit_range()
 
         if limit > r_max or limit < r_min:
@@ -200,7 +200,8 @@ class Cell:
         except ValueError:
             _log.exception('set_current_limit:Incorrect device state')
             raise
-        self.registers.write(CellRegister.Iset, code)
+        code = self.registers.write(CellRegister.Iset, code)
+        return code_to_float(code, MAX_CURRENT_DAC_CODE, r_min, r_max)
 
     def get_current_limit(self) -> float:
         r_min, r_max = self.get_current_limit_range()
@@ -215,7 +216,7 @@ class Cell:
         return self.registers.read_cached(CellRegister.Umin), \
                self.registers.read_cached(CellRegister.Umax)
 
-    def set_output_voltage(self, voltage: float):
+    def set_output_voltage(self, voltage: float) -> float:
         r_min, r_max = self.get_output_voltage_range()
 
         if voltage > r_max or voltage < r_min:
@@ -228,7 +229,8 @@ class Cell:
         except ValueError:
             _log.exception('set_output_voltage:Incorrect device state')
             raise
-        self.registers.write(CellRegister.VsetON, code)
+        code = self.registers.write(CellRegister.VsetON, code)
+        return code_to_float(code, MAX_DAC_CODE, r_min, r_max)
 
     def get_output_voltage(self) -> float:
         r_min, r_max = self.get_output_voltage_range()
@@ -239,11 +241,12 @@ class Cell:
             _log.exception('get_output_voltage:Incorrect device state')
             raise
 
-    def set_output_voltage_enabled(self, enabled: bool):
+    def set_output_voltage_enabled(self, enabled: bool) -> bool:
         val = self.registers.read(CellRegister.ctl_stat)
         val &= ~1
         val |= int(enabled)
-        self.registers.write(CellRegister.ctl_stat, val)
+        resp = self.registers.write(CellRegister.ctl_stat, val)
+        return CellCSR(resp).channel_on_state
 
     def is_output_voltage_enabled(self) -> bool:
         val = self.registers.read(CellRegister.ctl_stat)
