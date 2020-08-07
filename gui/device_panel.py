@@ -3,13 +3,12 @@ from typing import TypeVar, Callable, Any, Iterable
 
 from gi.repository import Gtk, Gdk, GObject
 
-from device.registers import TemperatureSensor
 from gui.error_label import ErrorLabel
 from gui.treeview_helpers import TreeModelAdapter, get_row_being_edited
 from gui.worker import CellState, DeviceParameter, Worker
 
 STATUS_HELP_TEXT = """* Errors:
-\tE\tError
+\tE\tUnknown
 \tI\tCurrent overload
 \tB\tBase voltage error
 \tH\tHardware failure
@@ -20,35 +19,44 @@ LOGGER = logging.getLogger('device-panel')
 T = TypeVar('T')
 
 
-def warning_markup(text: str) -> str:
+def warning_markup(text: Any) -> str:
     return f'<span background="yellow" foreground="black">{text}</span>'
 
 
-def error_markup(text: str) -> str:
+def error_markup(text: Any) -> str:
     return f'<span background="red" foreground="white" weight="bold">{text}</span>'
 
 
-def ok_markup(text: str) -> str:
+def good_markup(text: Any) -> str:
     return f'<span background="green" foreground="white" weight="bold">{text}</span>'
 
 
-def render_cell(cell: Gtk.CellRenderer, text: str, state: str, editable: bool):
+def make_markup(state: str, text: Any) -> str:
     if state == 'ok':
-        cell.props.markup = text
+        return str(text)
+    elif state == 'warning':
+        return warning_markup(text)
+    elif state == 'error':
+        return error_markup(text)
+    elif state == 'good':
+        return good_markup(text)
+
+
+def render_cell(cell: Gtk.CellRenderer, text: Any, state: str, editable: bool):
+    cell.props.markup = make_markup(state, text)
+
+    if state == 'ok':
         cell.props.cell_background = 'white' if editable else 'light gray'
     elif state == 'warning':
-        cell.props.markup = warning_markup(text)
         cell.props.cell_background = 'yellow'
     elif state == 'error':
-        cell.props.markup = error_markup(text)
         cell.props.cell_background = 'red'
+    elif state == 'good':
+        cell.props.cell_background = 'green'
 
 
-def make_simple_text_data_func(get: Callable[[CellState], str]):
-    def wrapper(cell: Gtk.CellRenderer, state: CellState):
-        cell.props.text = get(state)
-
-    return wrapper
+def cell_index_data_func(cell: Gtk.CellRenderer, state: CellState):
+    render_cell(cell, state.cell_index, 'good' if state.enabled.actual else 'ok', False)
 
 
 def make_parameter_data_func(get: Callable[[CellState], DeviceParameter]):
@@ -85,6 +93,10 @@ def measured_voltage_data_func(cell: Gtk.CellRenderer, state: CellState):
     render_cell(cell, f'<b>{slope}</b>{v_mes:.2f}', 'error' if bad else 'ok', False)
 
 
+def voltage_set_data_func(cell: Gtk.CellRenderer, state: CellState):
+    cell.props.text = f'{state.voltage_set.actual:.0f}'
+
+
 def measured_current_data_func(cell: Gtk.CellRenderer, state: CellState):
     i_lim = state.current_limit.actual
     i_mes = state.current_measured
@@ -104,21 +116,27 @@ def current_limit_range_data_func(cell: Gtk.CellRendererText, state: CellState):
 
 
 def cell_status_data_func(cell: Gtk.CellRendererText, state: CellState):
+    err = False
     msg = ''
     if state.csr.error:
         msg += 'E'
     if state.csr.current_overload:
         msg += 'I'
+        err = True
     if state.csr.base_voltage_error:
         msg += 'B'
+        err = True
     if state.csr.hardware_failure_error:
         msg += 'H'
+        err = True
     if state.csr.standby:
         msg += 'S'
+        err = True
     if state.csr.io_protection:
         msg += 'P'
+        err = True
 
-    render_cell(cell, msg if msg else '\u2014', 'error' if msg else 'ok', False)
+    render_cell(cell, msg if msg else '\u2014', 'error' if err else 'ok', False)
 
 
 class NumberEntry(Gtk.Entry, Gtk.Editable):
@@ -153,12 +171,7 @@ class ParamLabel(Gtk.Label):
         self._update()
 
     def _update(self):
-        if self._state == 'warning':
-            self.set_markup(warning_markup(self._text))
-        elif self._state == 'warning':
-            self.set_markup(error_markup(self._text))
-        else:
-            self.set_markup(f'{self._text}')
+        self.set_markup(make_markup(self._state, self._text))
 
 
 class TempEditor(GObject.Object):
@@ -235,13 +248,13 @@ class DevicePanel(Gtk.Box):
         status_help = Gtk.Label(label=STATUS_HELP_TEXT)
         status_help.set_xalign(0)
 
-        hbox = Gtk.Box()
-        hbox.set_orientation(Gtk.Orientation.HORIZONTAL)
+        box = Gtk.Box()
+        box.set_orientation(Gtk.Orientation.HORIZONTAL)
         align = Gtk.Alignment(xalign=0)
         align.add(self._make_controller_dashboard())
-        hbox.pack_start(align, False, True, 0)
-        hbox.pack_start(status_help, False, False, 0)
-        grid.attach(hbox, 0, 2, 2, 1)
+        box.pack_start(align, False, True, 0)
+        box.pack_start(status_help, False, False, 0)
+        grid.attach(box, 0, 2, 2, 1)
 
         for cell in self.worker.iter_cells():
             self.adapter.append(cell)
@@ -264,18 +277,16 @@ class DevicePanel(Gtk.Box):
         adapter = TreeModelAdapter()
         tree_view = Gtk.TreeView(model=adapter.model)
 
-        adapter.append_text_column(tree_view, '#',
-                                   make_simple_text_data_func(lambda s: str(s.cell_index)))
+        adapter.append_text_column(tree_view, '#', cell_index_data_func)
 
-        adapter.append_toggle_column(tree_view, 'Enabled', cell_enabled_data_func,
+        adapter.append_toggle_column(tree_view, 'En.\n(des)', cell_enabled_data_func,
                                      self._make_on_changed(Worker.set_enabled))
 
         adapter.append_text_column(tree_view, 'Voltage, V\n(desired)',
                                    make_parameter_data_func(lambda s: s.voltage_set),
                                    float, self._make_on_changed(Worker.set_output_voltage))
 
-        adapter.append_text_column(tree_view, 'Voltage, V\n(set)',
-                                   make_simple_text_data_func(lambda s: f'{s.voltage_set.actual:.0f}'))
+        adapter.append_text_column(tree_view, 'Voltage, V\n(set)', voltage_set_data_func)
 
         adapter.append_text_column(tree_view, 'Voltage, V\n(measured)', measured_voltage_data_func)
 
@@ -327,16 +338,7 @@ class DevicePanel(Gtk.Box):
 
         lv_text = attach_text_indicator('Low voltage:', 0, 1)
         bv_text = attach_text_indicator('Base voltage:', 0, 2)
-
-        bv_on_desired = Gtk.Switch()
-        bv_on_desired.connect('state-set', lambda _, b: self.worker.set_base_voltage_enabled(b))
-        bv_on_actual = Gtk.Label()
-        bv_on_label = attach_with_label('BV state:', 0, 3, bv_on_desired)
-        grid.attach(bv_on_actual, 1, 4, 1, 1)
-
-        t_proc_text = attach_text_indicator('T<sub>proc</sub>:', 3, 1)
-        t_board_text = attach_text_indicator('T<sub>board</sub>:', 3, 2)
-        t_power_text = attach_text_indicator('T<sub>power</sub>:', 3, 3)
+        t_proc_text = attach_text_indicator('T<sub>proc</sub>:', 0, 3)
 
         t_off = TempEditor(grid, 'T<sub>fan off</sub>:', 5, 1)
         t_off.connect('completed', lambda _, val: self.worker.set_fan_off_temp(val))
@@ -345,47 +347,17 @@ class DevicePanel(Gtk.Box):
         t_shutdown = TempEditor(grid, 'T<sub>shutdown</sub>:', 5, 3)
         t_shutdown.connect('completed', lambda _, val: self.worker.set_shutdown_temp(val))
 
-        sensors = [
-            (TemperatureSensor.microprocessor, 'uP'),
-            (TemperatureSensor.board, 'board'),
-            (TemperatureSensor.power_supply, 'power')
-        ]
-        indices = {s: i for i, (s, _) in enumerate(sensors)}
-
-        t_sensor_desired = Gtk.ComboBoxText()
-        t_sensor_desired.set_entry_text_column(0)
-        t_sensor_desired.connect('changed', lambda cb: self.worker.set_temp_sensor(sensors[cb.get_active()][0]))
-        t_sensor_actual = Gtk.ComboBoxText()
-        t_sensor_actual.set_entry_text_column(0)
-        t_sensor_actual.set_sensitive(False)
-        t_sensor_label = attach_with_label('T sensor:', 5, 4, t_sensor_desired, t_sensor_actual)
-
-        for ind, (s, sensor_text) in enumerate(sensors):
-            t_sensor_desired.append_text(sensor_text)
-            t_sensor_actual.append_text(sensor_text)
-
         def update_all(worker: Worker):
             state = worker.get_controller_state()
 
             lv_text.set_text(f'{state.low_voltage:.1f} V')
             bv_text.set_text(f'{state.base_voltage:.1f} V')
 
-            bv_on_label.set_state('warning' if state.base_voltage_enabled.waiting else 'ok')
-            bv_on_desired.set_active(state.base_voltage_enabled.desired)
-            bv_on_actual.set_markup(
-                ok_markup('enabled') if state.base_voltage_enabled.actual else error_markup('disabled'))
-
             t_proc_text.set_text(f'{state.processor_temp} \u00B0C')
-            t_board_text.set_text(f'{state.board_temp} \u00B0C')
-            t_power_text.set_text(f'{state.power_supply_temp} \u00B0C')
 
             t_off.update(state.fan_off_temp)
             t_on.update(state.fan_on_temp)
             t_shutdown.update(state.shutdown_temp)
-
-            t_sensor_label.set_state('warning' if state.temp_sensor.waiting else 'ok')
-            t_sensor_desired.set_active(indices[state.temp_sensor.desired])
-            t_sensor_actual.set_active(indices[state.temp_sensor.actual])
 
             msg = []
             if state.status.temperature_protection:
@@ -401,7 +373,7 @@ class DevicePanel(Gtk.Box):
                 state_text.set_state('error')
             else:
                 state_text.set_text('OK')
-                state_text.set_state('ok')
+                state_text.set_state('good')
 
         update_all(self.worker)
         self.worker.connect(Worker.CONTROLLER_UPDATED, update_all)
