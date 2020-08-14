@@ -2,7 +2,7 @@ import logging
 from concurrent.futures import Future
 from concurrent.futures.thread import ThreadPoolExecutor
 from dataclasses import dataclass
-from typing import Generic, Tuple, List, Callable, TypeVar, Optional
+from typing import Generic, Tuple, List, Callable, TypeVar, Optional, Dict
 
 from gi.repository import GObject, GLib
 
@@ -122,6 +122,14 @@ class ControllerValues(ControllerSettings):
     power_supply_temp: int
     low_voltage: float
     base_voltage: float
+
+
+class DeviceProfile:
+    def __init__(self):
+        self.cell_settings: Dict[int, CellSettings] = dict()
+
+
+Profile = 'defaultdict[str, DeviceProfile]'
 
 
 def _read_controller_values(ctl: Controller) -> ControllerValues:
@@ -403,12 +411,11 @@ class Worker(GObject.Object):
         check_ramp_down_value(state, value)
         self._start_modification(cell_index, state.ramp_down_speed, Cell.set_ramp_down_speed, value)
 
-    def apply_settings_to_cells(self, values: List[Tuple[int, CellSettings]]) -> None:
+    def load_device_profile(self, profile: DeviceProfile) -> None:
         """
         Set parameters of all device channels.
 
-        :param values: a list of tuples of the form (cell_index, enabled, voltage, current_limit, ramp_up, ramp_down).
-        Cells that are not listed are disabled.
+        :param profile: Contains settings for cells. Cells that are not listed are disabled.
 
         :raises IndexError: the voltage cell with specified index does not exist.
         :raises ValueError: when some values are invalid.
@@ -416,7 +423,7 @@ class Worker(GObject.Object):
 
         # Check values and restore order
         new_values: List[Optional[CellSettings]] = [None] * len(self._state)
-        for cell_index, settings in values:
+        for cell_index, settings in profile.cell_settings.items():
             state = self.get_cell_state(cell_index)
             check_voltage_value(state, settings.voltage)
             check_current_value(state, settings.current_limit)

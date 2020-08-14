@@ -1,10 +1,15 @@
 import csv
 import logging
 from collections import defaultdict
-from typing import List, Optional, Tuple
 
 from device.device import DeviceAddress
-from gui.worker import CellSettings
+from gui.worker import CellSettings, DeviceProfile, Profile
+
+
+class FormatError(Exception):
+    def __init__(self, msg: str):
+        self.message = msg
+
 
 LOGGER = logging.getLogger('files')
 
@@ -28,18 +33,14 @@ def read_device_list(file: str):
         return res
 
 
-Profile = 'Optional[defaultdict[str, List[Tuple[int, CellSettings]]]]'
-
-
 def read_profile(file: str) -> Profile:
     with open(file, 'r') as f:
         reader = csv.reader(f, skipinitialspace=True)
         header = next(reader)
         expected = ['device', 'cell_index', 'enabled', 'voltage', 'current_limit', 'ramp_up', 'ramp_down']
         if header != expected:
-            LOGGER.warning(f'Wrong csv file header. Expected: {expected}, Actual: {header}')
-            return None
-        res = defaultdict(list)
+            raise FormatError(f'Wrong csv file header. Expected: {expected}, Actual: {header}')
+        res = defaultdict(DeviceProfile)
         for row in reader:
             try:
                 device, cell_index, enabled, voltage, cur_lim, ramp_up, ramp_down = row
@@ -47,8 +48,7 @@ def read_profile(file: str) -> Profile:
                                         float(voltage), float(cur_lim),
                                         int(ramp_up), int(ramp_down))
                 cell_index = int(cell_index)
-                res[device].append((cell_index, settings))
-            except ValueError:
-                LOGGER.error(f'Wrong row format at line {reader.line_num}')
-                raise
+                res[device].cell_settings[cell_index] = settings
+            except ValueError as e:
+                raise FormatError(f'Wrong row format at line {reader.line_num}: {e}')
         return res
