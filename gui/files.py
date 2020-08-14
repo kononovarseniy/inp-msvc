@@ -3,7 +3,8 @@ import logging
 from collections import defaultdict
 
 from device.device import DeviceAddress
-from gui.worker import CellSettings, DeviceProfile, Profile
+from gui.worker import DeviceProfile, Profile
+from gui.state import CellSettings
 
 
 class FormatError(Exception):
@@ -46,7 +47,7 @@ def read_profile(file: str) -> Profile:
                 device, cell_index, enabled, voltage, cur_lim, ramp_up, ramp_down = row
                 settings = CellSettings(enabled.lower() == 'true',
                                         float(voltage), float(cur_lim),
-                                        int(ramp_up), int(ramp_down))
+                                        int(ramp_up), int(ramp_down), True)
                 cell_index = int(cell_index)
                 res[device].cell_settings[cell_index] = settings
             except ValueError as e:

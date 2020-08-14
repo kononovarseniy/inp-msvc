@@ -5,7 +5,8 @@ from gi.repository import Gtk, Gdk, GObject
 
 from gui.error_label import ErrorLabel
 from gui.treeview_helpers import TreeModelAdapter, get_row_being_edited
-from gui.worker import CellState, DeviceParameter, Worker
+from gui.worker import Worker
+from gui.state import CellState, DeviceParameter
 
 STATUS_HELP_TEXT = """* Errors:
 \tE\tUnknown
