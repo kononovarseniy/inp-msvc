@@ -38,16 +38,15 @@ def read_profile(file: str) -> Profile:
     with open(file, 'r') as f:
         reader = csv.reader(f, skipinitialspace=True)
         header = next(reader)
-        expected = ['device', 'cell_index', 'enabled', 'voltage', 'current_limit', 'ramp_up', 'ramp_down']
+        expected = ['device', 'cell_index', 'auto_enable', 'voltage', 'current_limit', 'ramp_up', 'ramp_down']
         if header != expected:
             raise FormatError(f'Wrong csv file header. Expected: {expected}, Actual: {header}')
         res = defaultdict(DeviceProfile)
         for row in reader:
             try:
-                device, cell_index, enabled, voltage, cur_lim, ramp_up, ramp_down = row
-                settings = CellSettings(enabled.lower() == 'true',
-                                        float(voltage), float(cur_lim),
-                                        int(ramp_up), int(ramp_down), True)
+                device, cell_index, auto_enable, voltage, cur_lim, ramp_up, ramp_down = row
+                settings = CellSettings(False, float(voltage), float(cur_lim),
+                                        int(ramp_up), int(ramp_down), auto_enable.lower() == 'true')
                 cell_index = int(cell_index)
                 res[device].cell_settings[cell_index] = settings
             except ValueError as e:

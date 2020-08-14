@@ -97,7 +97,8 @@ class MainWindow(Gtk.ApplicationWindow):
             self.notebook.append_page(container, Gtk.Label(label=dev.name))
 
             wrapper = WorkerWrapper()
-            wrapper.profile = profile[dev.name]
+            if profile is not None:
+                wrapper.profile = profile[dev.name]
             self.wrappers.append(wrapper)
 
             Worker.create(dev).add_done_callback(make_done_callback(i))

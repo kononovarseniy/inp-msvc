@@ -70,7 +70,12 @@ def make_parameter_data_func(get: Callable[[CellState], DeviceParameter]):
 
 def cell_enabled_data_func(cell: Gtk.CellRendererToggle, state: CellState):
     cell.props.active = state.enabled.desired
-    cell.props.cell_background = 'yellow' if state.enabled.waiting else 'white'
+    if state.enabled.waiting:
+        cell.props.cell_background = 'yellow'
+    elif state.auto_enable:
+        cell.props.cell_background = 'white'
+    else:
+        cell.props.cell_background = 'light gray'
 
 
 def measured_voltage_data_func(cell: Gtk.CellRenderer, state: CellState):
@@ -331,22 +336,29 @@ class DevicePanel(Gtk.Box):
             attach_with_label(label_str, x, y, text)
             return text
 
+        enable_all_button = Gtk.Button(label='Enable all cells')
+        enable_all_button.connect('clicked', self._on_enable_all)
+        grid.attach(enable_all_button, 0, 0, 1, 1)
+        disable_all_button = Gtk.Button(label='Disable all cells')
+        disable_all_button.connect('clicked', self._on_disable_all)
+        grid.attach(disable_all_button, 0, 1, 1, 1)
+
+        lv_text = attach_text_indicator('Low voltage:', 1, 0)
+        bv_text = attach_text_indicator('Base voltage:', 1, 1)
+        t_proc_text = attach_text_indicator('T<sub>proc</sub>:', 1, 2)
+
+        t_off = TempEditor(grid, 'T<sub>fan off</sub>:', 6, 0)
+        t_off.connect('completed', lambda _, val: self.worker.set_fan_off_temp(val))
+        t_on = TempEditor(grid, 'T<sub>fan on</sub>:', 6, 1)
+        t_on.connect('completed', lambda _, val: self.worker.set_fan_on_temp(val))
+        t_shutdown = TempEditor(grid, 'T<sub>shutdown</sub>:', 6, 2)
+        t_shutdown.connect('completed', lambda _, val: self.worker.set_shutdown_temp(val))
+
         state_label = ParamLabel('state:')
-        grid.attach(state_label, 0, 0, 1, 1)
+        grid.attach(state_label, 1, 3, 1, 1)
         state_text = ParamLabel('')
         state_text.set_xalign(0)
-        grid.attach(state_text, 1, 0, 6, 1)
-
-        lv_text = attach_text_indicator('Low voltage:', 0, 1)
-        bv_text = attach_text_indicator('Base voltage:', 0, 2)
-        t_proc_text = attach_text_indicator('T<sub>proc</sub>:', 0, 3)
-
-        t_off = TempEditor(grid, 'T<sub>fan off</sub>:', 5, 1)
-        t_off.connect('completed', lambda _, val: self.worker.set_fan_off_temp(val))
-        t_on = TempEditor(grid, 'T<sub>fan on</sub>:', 5, 2)
-        t_on.connect('completed', lambda _, val: self.worker.set_fan_on_temp(val))
-        t_shutdown = TempEditor(grid, 'T<sub>shutdown</sub>:', 5, 3)
-        t_shutdown.connect('completed', lambda _, val: self.worker.set_shutdown_temp(val))
+        grid.attach(state_text, 2, 3, 6, 1)
 
         def update_all(worker: Worker):
             state = worker.get_controller_state()
@@ -389,6 +401,16 @@ class DevicePanel(Gtk.Box):
 
     def _on_cell_updated(self, _: Worker, index: int) -> None:
         self._update_row(index - 1)
+
+    def _on_enable_all(self, button):
+        for i in range(1, self.worker.get_cell_count() + 1):
+            state = self.worker.get_cell_state(i)
+            if state.auto_enable:
+                self.worker.set_enabled(i, True)
+
+    def _on_disable_all(self, button):
+        for i in range(1, self.worker.get_cell_count() + 1):
+            self.worker.set_enabled(i, False)
 
     def stop(self):
         if self.worker is None:

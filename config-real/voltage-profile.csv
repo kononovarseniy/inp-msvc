@@ -1,2 +1,2 @@
-device, cell_index, enabled,    voltage,    current_limit,  ramp_up,    ramp_down
-dev_88, 1,          false,      350,        2000,           100,        100
+device, cell_index, auto enable,voltage,    current_limit,  ramp_up,    ramp_down
+dev_88, 1,          true,       350,        2000,           100,        100

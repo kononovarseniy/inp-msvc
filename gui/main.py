@@ -27,16 +27,17 @@ def main(args):
     except files.FormatError as e:
         LOGGER.error(f'Failed to parse profile {e}')
 
-    names1 = set(addr.name for addr in devices)
-    names2 = set(profile.keys())
+    if profile is not None:
+        names1 = set(addr.name for addr in devices)
+        names2 = set(profile.keys())
 
-    diff = names2 - names1
-    if len(diff) > 0:
-        LOGGER.error(f'Voltage profile uses some unknown device names: {diff}')
+        diff = names2 - names1
+        if len(diff) > 0:
+            LOGGER.error(f'Voltage profile uses some unknown device names: {diff}')
 
-    diff = names1 - names2
-    if len(diff) > 0:
-        LOGGER.warning(f'The profile does not contain parameters for some devices: {diff}')
+        diff = names1 - names2
+        if len(diff) > 0:
+            LOGGER.warning(f'The profile does not contain parameters for some devices: {diff}')
 
     win = MainWindow(devices, profile)
     win.connect("destroy", Gtk.main_quit)
