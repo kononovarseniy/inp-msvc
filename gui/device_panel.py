@@ -257,7 +257,9 @@ class DevicePanel(Gtk.Box):
         box = Gtk.Box()
         box.set_orientation(Gtk.Orientation.HORIZONTAL)
         align = Gtk.Alignment(xalign=0)
-        align.add(self._make_controller_dashboard())
+        dashboard, self._on_controller_updated = self._make_controller_dashboard()
+        self.worker.connect(Worker.CONTROLLER_UPDATED, self._on_controller_updated)
+        align.add(dashboard)
         box.pack_start(align, False, True, 0)
         box.pack_start(status_help, False, False, 0)
         grid.attach(box, 0, 2, 2, 1)
@@ -266,6 +268,21 @@ class DevicePanel(Gtk.Box):
             self.adapter.append(cell)
 
         self.add(grid)
+
+    def stop(self):
+        if self.worker is None:
+            raise RuntimeError('Illegal state')
+
+        LOGGER.debug(f'Stopping device panel {self.worker.get_device_address()})')
+        self.adapter.clear()
+        f = self.worker.close()
+        self.worker = None
+        return f
+
+    def set_worker(self, worker: Worker) -> None:
+        self.worker = worker
+        self.worker.connect(Worker.CELL_UPDATED, self._on_cell_updated)
+        self.worker.connect(Worker.CONTROLLER_UPDATED, self._on_controller_updated)
 
     def _make_on_changed(self, task):
         def on_changed(state: CellState, value: Any) -> bool:
@@ -316,7 +333,7 @@ class DevicePanel(Gtk.Box):
 
         return tree_view, adapter
 
-    def _make_controller_dashboard(self) -> Gtk.Grid:
+    def _make_controller_dashboard(self) -> (Gtk.Widget, Callable[[Worker], None]):
         grid = Gtk.Grid()
         grid.set_row_spacing(4)
         grid.set_column_spacing(4)
@@ -389,9 +406,8 @@ class DevicePanel(Gtk.Box):
                 state_text.set_state('good')
 
         update_all(self.worker)
-        self.worker.connect(Worker.CONTROLLER_UPDATED, update_all)
 
-        return grid
+        return grid, update_all
 
     def _update_row(self, index: int):
         path = get_row_being_edited(self.tree_view)
@@ -411,13 +427,3 @@ class DevicePanel(Gtk.Box):
     def _on_disable_all(self, button):
         for i in range(1, self.worker.get_cell_count() + 1):
             self.worker.set_enabled(i, False)
-
-    def stop(self):
-        if self.worker is None:
-            raise RuntimeError('Illegal state')
-
-        LOGGER.debug(f'Stopping device panel {self.worker.get_device_address()})')
-        self.adapter.clear()
-        f = self.worker.close()
-        self.worker = None
-        return f

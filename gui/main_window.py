@@ -117,7 +117,13 @@ class MainWindow(Gtk.ApplicationWindow):
         self.add_action(_new_action('file.load_one', self.on_load_one))
 
     def on_worker_created(self, f: 'Future[Worker]', index: int):
-        worker = self.wrappers[index].worker = f.result()
+        try:
+            worker = f.result()
+        except ConnectionError as e:
+            LOGGER.error(e)
+            return  # FIXME:
+        LOGGER.info(f'Connected to {worker.get_device_address()}')
+        self.wrappers[index].worker = worker
 
         tab = self.notebook.get_nth_page(index)
         for c in tab.get_children():

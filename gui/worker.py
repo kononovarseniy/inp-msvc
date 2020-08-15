@@ -1,5 +1,5 @@
 import logging
-from concurrent.futures import Future
+from concurrent.futures import Future, CancelledError
 from concurrent.futures.thread import ThreadPoolExecutor
 from typing import Tuple, List, Callable, TypeVar, Optional, Dict
 
@@ -41,8 +41,14 @@ def _read_device_state(device: Device) -> Tuple[ControllerState, List[CellState]
 
 
 def _connect(executor: ThreadPoolExecutor, address: DeviceAddress) -> 'Worker':
-    dev = Device(address, CHANNEL_COUNT, SOCKET_TIMEOUT)
-    ctl, cells = _read_device_state(dev)
+    try:
+        dev = Device(address, CHANNEL_COUNT, SOCKET_TIMEOUT)
+        ctl, cells = _read_device_state(dev)
+    except (EOFError, OSError) as e:
+        msg = f'Failed to connect to {address}: {e}'
+        LOGGER.error(msg)
+        raise ConnectionError(msg)
+    LOGGER.info(f'Connected to {address}')
     return Worker(executor, dev, ctl, cells)
 
 
@@ -77,6 +83,7 @@ class Worker(GObject.Object):
     CELL_UPDATED = 'cell-updated'
     UPDATED = 'updated'
     CONTROLLER_UPDATED = 'controller-updated'
+    CONNECTION_ERROR = 'connection-error'
 
     def __init__(self, executor: ThreadPoolExecutor, device: Device,
                  ctl_state: ControllerState, cells_state: List[CellState]):
@@ -86,6 +93,7 @@ class Worker(GObject.Object):
         self._device = device
         self._state = cells_state
         self._controller_state = ctl_state
+        self._shutdown = False
         GLib.timeout_add(10000, self._on_timer)
 
     @staticmethod
@@ -97,11 +105,12 @@ class Worker(GObject.Object):
         if self._executor is None:
             raise RuntimeError('Illegal worker state')
 
-        f = self._executor.submit(self._device.close)
+        future = self._executor.submit(self._device.close)
+        self._shutdown = True
         self._executor.shutdown(wait=False)
         self._executor = None
         self._device = None
-        return f
+        return future
 
     def get_device_address(self) -> DeviceAddress:
         return self._device.address
@@ -131,45 +140,86 @@ class Worker(GObject.Object):
     def get_controller_state(self) -> ControllerState:
         return self._controller_state
 
-    def _start_parameter_modification(self, cell_index: int, parameter: DeviceParameter[T],
-                                      task: Callable[[Cell, T], T], value: T):
+    def _cell_id(self, cell_index: int) -> str:
+        return f'{self.get_device_address().name}#{cell_index}'
+
+    def _get_cell_and_state(self, cell_index):
         cell = self._device.cells[cell_index - 1]
         state = self._state[cell_index - 1]
-        LOGGER.debug(f'Writing value {value} to cell {cell_index} using {task}')
+        return cell, state
+
+    def _submit_work(self, work, args, callback, cb_args):
+        glib_wait_future(
+            self._executor.submit(self._do_work, work, args),
+            callback, *cb_args)
+
+    def _do_work(self, work, args):
+        if self._shutdown:
+            raise CancelledError
+        try:
+            return work(*args)
+        except (OSError, EOFError):
+            self._shutdown = True
+            raise
+
+    def _handle_result(self, future: Future) -> bool:
+        try:
+            future.result()
+            return True
+        except CancelledError:
+            LOGGER.warning('Action cancelled')
+        except (OSError, EOFError) as e:
+            LOGGER.error(f'Connection error: {e}')
+            self.close()
+            self.emit(Worker.CONNECTION_ERROR)
+        return False
+
+    def _start_parameter_modification(self, cell_index: int, parameter: DeviceParameter[T],
+                                      task: Callable[[Cell, T], T], value: T):
+        LOGGER.debug(f'Starting modification of parameter of the cell {self._cell_id(cell_index)}. '
+                     f'Value: {value}, Task: {task}')
+        cell, state = self._get_cell_and_state(cell_index)
 
         parameter.set_desired_inc_waiting(value)
-        glib_wait_future(self._executor.submit(task, cell, value),
-                         self._complete_parameter_modification, state, parameter)
+        self._submit_work(task, (cell, value), self._complete_parameter_modification, (state, parameter))
         self.emit(Worker.CELL_UPDATED, state.cell_index)
 
     def _complete_parameter_modification(self, f: Future, state: CellState, parameter: DeviceParameter):
+        if not self._handle_result(f):
+            return
         result = f.result()
-        LOGGER.debug(f'Modification of cell #{state.cell_index} completed. Value: {result}')
+        LOGGER.debug(f'Completing modification of parameter of the cell {self._cell_id(state.cell_index)}. '
+                     f'Value: {result}')
         parameter.set_actual_dec_waiting(result)
         self.emit(Worker.CELL_UPDATED, state.cell_index)
 
     def _start_cell_modification(self, cell_index: int, settings: CellSettings):
-        cell = self._device.cells[cell_index - 1]
-        state = self._state[cell_index - 1]
+        LOGGER.debug(f'Starting modification of the cell {self._cell_id(cell_index)}')
+        cell, state = self._get_cell_and_state(cell_index)
 
         update_desired_state(state, settings)
-        glib_wait_future(self._executor.submit(write_cell_settings, cell, settings),
-                         self._complete_cell_modification, state)
+        self._submit_work(write_cell_settings, (cell, settings), self._complete_cell_modification, (state,))
         self.emit(Worker.CELL_UPDATED, state.cell_index)
 
     def _complete_cell_modification(self, f: Future, state: CellState):
+        if not self._handle_result(f):
+            return
         settings = f.result()
+        LOGGER.debug(f'Completing modification of the cell {self._cell_id(state.cell_index)}')
         update_actual_state(state, settings)
         self.emit(Worker.CELL_UPDATED, state.cell_index)
 
     def _start_ctl_modification(self, parameter: DeviceParameter[T], task: Callable[[Controller, T], T], value: T):
+        LOGGER.debug(f'Starting controller parameter modification. Value: {value}')
         parameter.set_desired_inc_waiting(value)
-        glib_wait_future(self._executor.submit(task, self._device.controller, value),
-                         self._complete_ctl_modification, parameter)
+        self._submit_work(task, (self._device.controller, value), self._complete_ctl_modification, (parameter,))
         self.emit(Worker.CONTROLLER_UPDATED)
 
     def _complete_ctl_modification(self, f: Future, parameter: DeviceParameter):
+        if not self._handle_result(f):
+            return
         result = f.result()
+        LOGGER.debug(f'Completing controller parameter modification. Value: {result}')
         parameter.set_actual_dec_waiting(result)
         self.emit(Worker.CONTROLLER_UPDATED)
 
@@ -256,7 +306,14 @@ class Worker(GObject.Object):
     def _on_controller_updated(self):
         pass
 
+    @GObject.Signal(name=CONNECTION_ERROR)
+    def _on_connection_error(self):
+        pass
+
     def _on_timer(self):
+        if self._shutdown:
+            return False
+
         glib_wait_future(self._executor.submit(_read_device_values, self._device),
                          self._on_update_completed)
         return True
