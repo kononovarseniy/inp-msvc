@@ -29,7 +29,7 @@ def main(args):
 
     if profile is not None:
         names1 = set(addr.name for addr in devices)
-        names2 = set(profile.keys())
+        names2 = set(profile.device_names())
 
         diff = names2 - names1
         if len(diff) > 0:

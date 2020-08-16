@@ -1,7 +1,8 @@
 import logging
+from collections import defaultdict
 from concurrent.futures import Future, CancelledError
 from concurrent.futures.thread import ThreadPoolExecutor
-from typing import Tuple, List, Callable, TypeVar, Optional, Dict
+from typing import Tuple, List, Callable, TypeVar, Optional, Dict, Union, Iterable
 
 from gi.repository import GObject, GLib
 
@@ -29,10 +30,22 @@ class DeviceProfile:
         self.cell_settings: Dict[int, CellSettings] = dict()
 
 
-Profile = 'defaultdict[str, DeviceProfile]'
+class Profile:
+    def __init__(self, filename: str):
+        super().__init__()
+        self._dict = defaultdict(DeviceProfile)
+        self.filename = filename
+
+    def __getitem__(self, device: Union[str, DeviceAddress]):
+        if isinstance(device, DeviceAddress):
+            device = device.name
+        return self._dict[device]
+
+    def device_names(self) -> Iterable[str]:
+        return self._dict.keys()
 
 
-def _read_device_values(device: Device) -> Tuple[ControllerUpdates, List[CellUpdates]]:
+def _read_device_updates(device: Device) -> Tuple[ControllerUpdates, List[CellUpdates]]:
     return read_controller_updates(device.controller), list(map(read_cell_updates, device.cells))
 
 
@@ -167,11 +180,12 @@ class Worker(GObject.Object):
             future.result()
             return True
         except CancelledError:
-            LOGGER.warning('Action cancelled')
+            LOGGER.warning(f'{self.get_device_address()}: Action cancelled')
         except (OSError, EOFError) as e:
-            LOGGER.error(f'Connection error: {e}')
+            msg = f'{self.get_device_address()}: Connection error: {e}'
+            LOGGER.error(msg)
             self.close()
-            self.emit(Worker.CONNECTION_ERROR)
+            self.emit(Worker.CONNECTION_ERROR, msg)
         return False
 
     def _start_parameter_modification(self, cell_index: int, parameter: DeviceParameter[T],
@@ -222,6 +236,23 @@ class Worker(GObject.Object):
         LOGGER.debug(f'Completing controller parameter modification. Value: {result}')
         parameter.set_actual_dec_waiting(result)
         self.emit(Worker.CONTROLLER_UPDATED)
+
+    def _start_update(self):
+        LOGGER.debug(f'Start reading values. Device: {self.get_device_address()}')
+        glib_wait_future(self._executor.submit(_read_device_updates, self._device),
+                         self._complete_update)
+
+    def _complete_update(self, f: 'Future[Tuple[ControllerUpdates, List[CellUpdates]]]'):
+        if not self._handle_result(f):
+            return
+        ctl_updates, cell_updates = f.result()
+        LOGGER.debug(f'Completion of reading values. Device: {self.get_device_address()}')
+        update_controller_state(self._controller_state, ctl_updates)
+        self.emit(Worker.CONTROLLER_UPDATED)
+        for state, updates in zip(self._state, cell_updates):
+            update_cell_state(state, updates)
+            self.emit(Worker.CELL_UPDATED, state.cell_index)
+        self.emit(Worker.UPDATED)
 
     def set_enabled(self, cell_index: int, value: bool):
         state = self.get_cell_state(cell_index)
@@ -307,25 +338,14 @@ class Worker(GObject.Object):
         pass
 
     @GObject.Signal(name=CONNECTION_ERROR)
-    def _on_connection_error(self):
+    def _on_connection_error(self, msg: str):
         pass
 
     def _on_timer(self):
         if self._shutdown:
             return False
-
-        glib_wait_future(self._executor.submit(_read_device_values, self._device),
-                         self._on_update_completed)
+        self._start_update()
         return True
-
-    def _on_update_completed(self, f: 'Future[Tuple[ControllerUpdates, List[CellUpdates]]]'):
-        ctl_updates, cell_updates = f.result()
-        update_controller_state(self._controller_state, ctl_updates)
-        self.emit(Worker.CONTROLLER_UPDATED)
-        for state, updates in zip(self._state, cell_updates):
-            update_cell_state(state, updates)
-            self.emit(Worker.CELL_UPDATED, state.cell_index)
-        self.emit(Worker.UPDATED)
 
     def __str__(self):
         return f'<Worker {self._device.address}>'

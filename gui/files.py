@@ -41,7 +41,7 @@ def read_profile(file: str) -> Profile:
         expected = ['device', 'cell_index', 'auto_enable', 'voltage', 'current_limit', 'ramp_up', 'ramp_down']
         if header != expected:
             raise FormatError(f'Wrong csv file header. Expected: {expected}, Actual: {header}')
-        res = defaultdict(DeviceProfile)
+        res = Profile(file)
         for row in reader:
             try:
                 device, cell_index, auto_enable, voltage, cur_lim, ramp_up, ramp_down = row

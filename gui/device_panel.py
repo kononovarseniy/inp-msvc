@@ -1,5 +1,5 @@
 import logging
-from typing import TypeVar, Callable, Any, Iterable
+from typing import TypeVar, Callable, Any, Iterable, Optional
 
 from gi.repository import Gtk, Gdk, GObject
 
@@ -219,12 +219,12 @@ class TempEditor(GObject.Object):
 
 
 class DevicePanel(Gtk.Box):
+    worker: Optional[Worker]
 
     def __init__(self, worker: Worker):
         super().__init__()
 
-        self.worker = worker
-        self.worker.connect(Worker.CELL_UPDATED, self._on_cell_updated)
+        self.override_background_color(Gtk.StateType.NORMAL, Gdk.RGBA.from_color(Gdk.color_parse('white')))
 
         grid = Gtk.Grid()
         grid.set_column_spacing(4)
@@ -232,40 +232,37 @@ class DevicePanel(Gtk.Box):
         grid.set_margin_top(4)
         grid.set_margin_left(4)
         grid.set_margin_right(4)
-        self.override_background_color(Gtk.StateType.NORMAL, Gdk.RGBA.from_color(Gdk.color_parse('white')))
 
-        device_label = Gtk.Label()
-        device_label.set_xalign(0)
-        device_label.set_markup(f'Connected to <b>{self.worker.get_device_address()}</b>')
-        grid.attach(device_label, 0, 0, 1, 1)
+        self.device_label = Gtk.Label()
+        self.device_label.set_xalign(0)
+        grid.attach(self.device_label, 0, 0, 1, 1)
 
         self.error_label = ErrorLabel()
+        self.error_label.set_xalign(1)
         grid.attach(self.error_label, 1, 0, 1, 1)
 
         self.tree_view, self.adapter = self._make_tree_view()
         scroll = Gtk.ScrolledWindow()
-        scroll.add(self.tree_view)
         scroll.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.NEVER)
+        scroll.add(self.tree_view)
         frame = Gtk.Frame()
-        frame.add(scroll)
         frame.set_hexpand(True)
+        frame.add(scroll)
         grid.attach(frame, 0, 1, 2, 1)
 
         status_help = Gtk.Label(label=STATUS_HELP_TEXT)
         status_help.set_xalign(0)
 
+        dashboard, self._on_controller_updated = self._make_controller_dashboard()
+        align = Gtk.Alignment(xalign=0)
+        align.add(dashboard)
         box = Gtk.Box()
         box.set_orientation(Gtk.Orientation.HORIZONTAL)
-        align = Gtk.Alignment(xalign=0)
-        dashboard, self._on_controller_updated = self._make_controller_dashboard()
-        self.worker.connect(Worker.CONTROLLER_UPDATED, self._on_controller_updated)
-        align.add(dashboard)
         box.pack_start(align, False, True, 0)
         box.pack_start(status_help, False, False, 0)
         grid.attach(box, 0, 2, 2, 1)
 
-        for cell in self.worker.iter_cells():
-            self.adapter.append(cell)
+        self.set_worker(worker)
 
         self.add(grid)
 
@@ -281,6 +278,14 @@ class DevicePanel(Gtk.Box):
 
     def set_worker(self, worker: Worker) -> None:
         self.worker = worker
+
+        # Update components
+        self.adapter.clear()
+        for cell in self.worker.iter_cells():
+            self.adapter.append(cell)
+        self._on_controller_updated(worker)
+        self.device_label.set_markup(f'Connected to <b>{self.worker.get_device_address()}</b>')
+
         self.worker.connect(Worker.CELL_UPDATED, self._on_cell_updated)
         self.worker.connect(Worker.CONTROLLER_UPDATED, self._on_controller_updated)
 
@@ -404,8 +409,6 @@ class DevicePanel(Gtk.Box):
             else:
                 state_text.set_text('OK')
                 state_text.set_state('good')
-
-        update_all(self.worker)
 
         return grid, update_all
 

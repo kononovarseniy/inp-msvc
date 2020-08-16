@@ -1,14 +1,23 @@
 import logging
 from concurrent.futures import Future
+from functools import partial
 from typing import List, Optional
 
-from gi.repository import Gtk, GLib, Gio
+from gi.repository import Gtk, Gio
 
-import gui.worker
 from device.device import DeviceAddress
 from gui import files
 from gui.device_panel import DevicePanel
-from gui.worker import Worker
+from gui.stub_panel import StubPanel, State
+from gui.util import glib_wait_future
+from gui.worker import Worker, Profile
+
+TITLE = 'Muon system voltage controller'
+
+RESPONSE_RECONNECT = 1
+RESPONSE_RECONNECT_WITH_PROFILE = 2
+RESPONSE_RECONNECT_WITHOUT_PROFILE = 3
+RESPONSE_DISCONNECT = 4
 
 LOGGER = logging.getLogger('MainWindow')
 
@@ -34,19 +43,89 @@ def _create_menubar():
     return Gtk.MenuBar.new_from_model(menu_model)
 
 
+def show_simple_reconnect_dialog(parent, address: DeviceAddress, msg: str) -> int:
+    dlg = Gtk.MessageDialog(
+        parent=parent,
+        type=Gtk.MessageType.ERROR,
+        buttons=(
+            'Reconnect', RESPONSE_RECONNECT,
+            'Disconnect', RESPONSE_DISCONNECT
+        ),
+        message_format=f'{address}\nConnection failure. Reconnect?'
+    )
+    dlg.set_title(TITLE)
+    dlg.format_secondary_text(f'{msg}\nDo you want to try again?')
+    response = dlg.run()
+    dlg.destroy()
+    return response
+
+
+def show_reconnect_dialog(parent, address: DeviceAddress, msg: str) -> int:
+    dlg = Gtk.MessageDialog(
+        parent=parent,
+        type=Gtk.MessageType.ERROR,
+        buttons=(
+            'Reconnect, use profile', RESPONSE_RECONNECT_WITH_PROFILE,
+            'Reconnect, read device state', RESPONSE_RECONNECT_WITHOUT_PROFILE,
+            'Disconnect', RESPONSE_DISCONNECT
+        ),
+        message_format=f'{address}\nConnection failure. Reconnect?'
+    )
+    dlg.set_title(TITLE)
+    dlg.format_secondary_text(f'{msg}\n'
+                              f'You have several options:\n'
+                              f'\t1) Reconnect and set parameters from current device profile\n'
+                              f'\t2) Reconnect and read device state without altering it\n'
+                              f'\t3) Disconnect')
+    response = dlg.run()
+    dlg.destroy()
+    return response
+
+
+def show_profile_chooser_dialog(parent, title: str) -> Optional[str]:
+    dlg = Gtk.FileChooserDialog(
+        title=title,
+        parent=parent,
+        action=Gtk.FileChooserAction.OPEN,
+        buttons=(
+            Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
+            Gtk.STOCK_OPEN, Gtk.ResponseType.OK
+        ))
+
+    file_filter = Gtk.FileFilter()
+    file_filter.set_name("CSV files")
+    file_filter.add_pattern("*.csv")
+    dlg.add_filter(file_filter)
+
+    file_filter = Gtk.FileFilter()
+    file_filter.set_name("All files")
+    file_filter.add_pattern("*")
+    dlg.add_filter(file_filter)
+
+    dlg.run()
+    file = dlg.get_filename()
+    dlg.destroy()
+    return file
+
+
 class WorkerWrapper:
-    def __init__(self):
+    def __init__(self, address: DeviceAddress):
+        self._address = address
         self._worker: Optional[Worker] = None
-        self._profile: Optional[gui.worker.DeviceProfile] = None
+        self._profile: Optional[Profile] = None
 
     def _load_profile(self):
         try:
             if self._worker is not None and self._profile is not None:
-                self._worker.load_device_profile(self._profile)
+                self._worker.load_device_profile(self._profile[self.address])
         except IndexError:
             LOGGER.error(f'Unable to load profile: the voltage cell with specified index does not exist')
         except ValueError as e:
             LOGGER.error(f'Unable to load profile: {self._worker.get_device_address()} {e}')
+
+    @property
+    def address(self):
+        return self._address
 
     @property
     def worker(self) -> Optional[Worker]:
@@ -58,23 +137,20 @@ class WorkerWrapper:
         self._load_profile()
 
     @property
-    def profile(self) -> Optional[gui.worker.DeviceProfile]:
+    def profile(self) -> Optional[Profile]:
         return self._profile
 
     @profile.setter
-    def profile(self, value: Optional[gui.worker.DeviceProfile]):
+    def profile(self, value: Optional[Profile]):
         self._profile = value
         self._load_profile()
-
-    def set_profile(self, value: gui.worker.Profile):
-        self.profile = value[self._worker.get_device_address().name]
 
 
 class MainWindow(Gtk.ApplicationWindow):
 
-    def __init__(self, devices: List[DeviceAddress], profile: Optional[gui.worker.Profile]):
+    def __init__(self, devices: List[DeviceAddress], profile: Optional[Profile]):
         super().__init__()
-        self.set_title('Muon system voltage controller')
+        self.set_title(TITLE)
         self.set_border_width(0)
         self.set_default_size(700, 480)
 
@@ -84,25 +160,17 @@ class MainWindow(Gtk.ApplicationWindow):
         self.notebook.set_hexpand(True)
         self.notebook.set_vexpand(True)
 
-        def make_done_callback(index: int):
-            return lambda f: GLib.idle_add(self.on_worker_created, f, index)
-
         for i, dev in enumerate(devices):
-            label = Gtk.Label()
-            label.set_markup(f'Connecting to <b>{dev}</b>')
+            tab_body = Gtk.Box()
+            tab_body.pack_start(StubPanel(dev, State.CONNECTING, profile), True, True, 0)
+            self.notebook.append_page(tab_body, Gtk.Label(label=dev.name))
 
-            container = Gtk.Box()
-            container.pack_start(label, True, True, 0)
-
-            self.notebook.append_page(container, Gtk.Label(label=dev.name))
-
-            wrapper = WorkerWrapper()
+            wrapper = WorkerWrapper(dev)
             if profile is not None:
-                wrapper.profile = profile[dev.name]
+                wrapper.profile = profile
             self.wrappers.append(wrapper)
 
-            Worker.create(dev).add_done_callback(make_done_callback(i))
-
+            glib_wait_future(Worker.create(dev), self.on_worker_created, i)
         self.notebook.show_all()
 
         # a grid to attach the widgets
@@ -116,54 +184,68 @@ class MainWindow(Gtk.ApplicationWindow):
         self.add_action(_new_action('file.load_all', self.on_load_all))
         self.add_action(_new_action('file.load_one', self.on_load_one))
 
+    def set_nth_page(self, index, panel):
+        tab = self.notebook.get_nth_page(index)
+        for c in tab.get_children():
+            tab.remove(c)
+        tab.pack_start(panel, True, True, 0)
+        self.notebook.show_all()
+
+    def show_stub_page(self, index: int):
+        wrapper = self.wrappers[index]
+        panel = StubPanel(wrapper.address, State.DISCONNECTED, wrapper.profile)
+        panel.connect(StubPanel.RECONNECT_CLICKED, lambda _, use_profile: self.reconnect_device(use_profile, index))
+        self.set_nth_page(index, panel)
+
+    def reconnect_device(self, use_profile: bool, index: int):
+        wrapper = self.wrappers[index]
+        wrapper.worker = None
+        if use_profile:
+            LOGGER.info(f'Reconnecting to {wrapper.address} using current profile')
+            glib_wait_future(Worker.create(wrapper.address), self.on_worker_created, index)
+        else:
+            LOGGER.info(f'Reconnecting to {wrapper.address} without profile')
+            wrapper.profile = None
+            glib_wait_future(Worker.create(wrapper.address), self.on_worker_created, index)
+
+    def disconnect_device(self, index: int):
+        wrapper = self.wrappers[index]
+        LOGGER.info(f'Disconnecting from {wrapper.address}')
+        wrapper.worker = None
+        self.show_stub_page(index)
+
     def on_worker_created(self, f: 'Future[Worker]', index: int):
+        wrapper = self.wrappers[index]
         try:
             worker = f.result()
         except ConnectionError as e:
             LOGGER.error(e)
-            return  # FIXME:
+            response = show_simple_reconnect_dialog(self, wrapper.address, str(e))
+
+            if response == RESPONSE_RECONNECT:
+                self.reconnect_device(True, index)
+            else:
+                self.disconnect_device(index)
+            return
+
         LOGGER.info(f'Connected to {worker.get_device_address()}')
-        self.wrappers[index].worker = worker
+        wrapper.worker = worker
+        worker.connect(Worker.CONNECTION_ERROR, partial(self.on_connection_error, index=index))
 
-        tab = self.notebook.get_nth_page(index)
-        for c in tab.get_children():
-            tab.remove(c)
-        tab.pack_start(DevicePanel(worker), True, True, 0)
+        self.set_nth_page(index, DevicePanel(worker))
 
-        self.notebook.show_all()
+    def on_connection_error(self, _: Worker, msg: str, *, index: int):
+        response = show_reconnect_dialog(self, self.wrappers[index].address, msg)
 
-    def choose_profile(self, title: str) -> Optional[str]:
-        dlg = Gtk.FileChooserDialog(
-            title=title,
-            parent=self,
-            action=Gtk.FileChooserAction.OPEN,
-            buttons=(
-                Gtk.STOCK_CANCEL, Gtk.ResponseType.CANCEL,
-                Gtk.STOCK_OPEN, Gtk.ResponseType.OK
-            ))
-
-        file_filter = Gtk.FileFilter()
-        file_filter.set_name("CSV files")
-        file_filter.add_pattern("*.csv")
-        dlg.add_filter(file_filter)
-
-        file_filter = Gtk.FileFilter()
-        file_filter.set_name("All files")
-        file_filter.add_pattern("*")
-        dlg.add_filter(file_filter)
-
-        res = dlg.run()
-        if res == Gtk.ResponseType.OK:
-            profile = dlg.get_filename()
-            LOGGER.info(f'Profile chosen: {profile}')
+        if response == RESPONSE_RECONNECT_WITH_PROFILE:
+            self.reconnect_device(True, index)
+        elif response == RESPONSE_RECONNECT_WITHOUT_PROFILE:
+            self.reconnect_device(False, index)
         else:
-            profile = None
-            LOGGER.info('Profile not chosen')
-        dlg.destroy()
-        return profile
+            self.disconnect_device(index)
 
     def read_profile(self, title: str):
-        profile = self.choose_profile(title)
+        profile = show_profile_chooser_dialog(self, title)
         if profile is None:
             LOGGER.info('Profile is not loaded')
             return None
@@ -181,7 +263,7 @@ class MainWindow(Gtk.ApplicationWindow):
             return
 
         for w in self.wrappers:
-            w.set_profile(profile)
+            w.profile = profile
 
     def on_load_one(self, action, value):
         profile = self.read_profile("Chose profile for selected device...")
@@ -189,4 +271,4 @@ class MainWindow(Gtk.ApplicationWindow):
             return
 
         page = self.notebook.get_current_page()
-        self.wrappers[page].set_profile(profile)
+        self.wrappers[page].profile = profile
