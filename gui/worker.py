@@ -122,7 +122,6 @@ class Worker(GObject.Object):
         self._shutdown = True
         self._executor.shutdown(wait=False)
         self._executor = None
-        self._device = None
         return future
 
     def get_device_address(self) -> DeviceAddress:
