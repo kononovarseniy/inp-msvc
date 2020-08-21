@@ -3,9 +3,11 @@ from typing import TypeVar, Callable, Any, Iterable, Optional
 
 from gi.repository import Gtk, Gdk, GObject
 
-from gui.error_label import ErrorLabel
+from gui.widgets.error_label import create_error_label
+from gui.observable import Observable
+from gui.widgets.profile_label import create_profile_label
 from gui.treeview_helpers import TreeModelAdapter, get_row_being_edited
-from gui.worker import Worker
+from gui.worker import Worker, Profile
 from gui.state import CellState, DeviceParameter
 
 STATUS_HELP_TEXT = """* Errors:
@@ -221,10 +223,12 @@ class TempEditor(GObject.Object):
 class DevicePanel(Gtk.Box):
     worker: Optional[Worker]
 
-    def __init__(self, worker: Worker):
+    def __init__(self, worker: Worker, profile: Observable[Optional[Profile]]):
         super().__init__()
 
         self.override_background_color(Gtk.StateType.NORMAL, Gdk.RGBA.from_color(Gdk.color_parse('white')))
+
+        self._error_text = Observable('')
 
         grid = Gtk.Grid()
         grid.set_column_spacing(4)
@@ -237,9 +241,13 @@ class DevicePanel(Gtk.Box):
         self.device_label.set_xalign(0)
         grid.attach(self.device_label, 0, 0, 1, 1)
 
-        self.error_label = ErrorLabel()
-        self.error_label.set_xalign(1)
-        grid.attach(self.error_label, 1, 0, 1, 1)
+        error_label = create_error_label(self._error_text)
+        error_label.set_xalign(1)
+        grid.attach(error_label, 1, 0, 1, 1)
+
+        profile_label = create_profile_label(profile)
+        profile_label.set_xalign(0)
+        grid.attach(profile_label, 0, 1, 2, 1)
 
         self.tree_view, self.adapter = self._make_tree_view()
         scroll = Gtk.ScrolledWindow()
@@ -248,7 +256,7 @@ class DevicePanel(Gtk.Box):
         frame = Gtk.Frame()
         frame.set_hexpand(True)
         frame.add(scroll)
-        grid.attach(frame, 0, 1, 2, 1)
+        grid.attach(frame, 0, 2, 2, 1)
 
         status_help = Gtk.Label(label=STATUS_HELP_TEXT)
         status_help.set_xalign(0)
@@ -260,9 +268,18 @@ class DevicePanel(Gtk.Box):
         box.set_orientation(Gtk.Orientation.HORIZONTAL)
         box.pack_start(align, False, True, 0)
         box.pack_start(status_help, False, False, 0)
-        grid.attach(box, 0, 2, 2, 1)
+        grid.attach(box, 0, 3, 2, 1)
 
-        self.set_worker(worker)
+        self.worker = worker
+        self.worker.connect(Worker.CELL_UPDATED, self._on_cell_updated)
+        self.worker.connect(Worker.CONTROLLER_UPDATED, self._on_controller_updated)
+
+        # Update components
+        self.adapter.clear()
+        for cell in self.worker.iter_cells():
+            self.adapter.append(cell)
+        self._on_controller_updated(worker)
+        self.device_label.set_markup(f'Connected to <b>{self.worker.get_device_address()}</b>')
 
         self.add(grid)
 
@@ -276,19 +293,6 @@ class DevicePanel(Gtk.Box):
         self.worker = None
         return f
 
-    def set_worker(self, worker: Worker) -> None:
-        self.worker = worker
-
-        # Update components
-        self.adapter.clear()
-        for cell in self.worker.iter_cells():
-            self.adapter.append(cell)
-        self._on_controller_updated(worker)
-        self.device_label.set_markup(f'Connected to <b>{self.worker.get_device_address()}</b>')
-
-        self.worker.connect(Worker.CELL_UPDATED, self._on_cell_updated)
-        self.worker.connect(Worker.CONTROLLER_UPDATED, self._on_controller_updated)
-
     def _make_on_changed(self, task):
         def on_changed(state: CellState, value: Any) -> bool:
             try:
@@ -296,7 +300,7 @@ class DevicePanel(Gtk.Box):
                 return True
             except ValueError as e:
                 LOGGER.debug(f'User entered an invalid value: {e}')
-                self.error_label.show_error(str(e))
+                self._error_text.value = str(e)
                 return False
 
         return on_changed

@@ -8,6 +8,7 @@ from gi.repository import Gtk, Gio
 from device.device import DeviceAddress
 from gui import files
 from gui.device_panel import DevicePanel
+from gui.observable import Observable
 from gui.stub_panel import StubPanel, State
 from gui.util import glib_wait_future
 from gui.worker import Worker, Profile
@@ -112,12 +113,13 @@ class WorkerWrapper:
     def __init__(self, address: DeviceAddress):
         self._address = address
         self._worker: Optional[Worker] = None
-        self._profile: Optional[Profile] = None
+        self.profile = Observable(None)
+        self.profile.add_observer(lambda _: self._load_profile())
 
     def _load_profile(self):
         try:
-            if self._worker is not None and self._profile is not None:
-                self._worker.load_device_profile(self._profile[self.address])
+            if self._worker is not None and self.profile.value is not None:
+                self._worker.load_device_profile(self.profile.value[self.address])
         except IndexError:
             LOGGER.error(f'Unable to load profile: the voltage cell with specified index does not exist')
         except ValueError as e:
@@ -136,15 +138,6 @@ class WorkerWrapper:
         self._worker = value
         self._load_profile()
 
-    @property
-    def profile(self) -> Optional[Profile]:
-        return self._profile
-
-    @profile.setter
-    def profile(self, value: Optional[Profile]):
-        self._profile = value
-        self._load_profile()
-
 
 class MainWindow(Gtk.ApplicationWindow):
 
@@ -161,14 +154,13 @@ class MainWindow(Gtk.ApplicationWindow):
         self.notebook.set_vexpand(True)
 
         for i, dev in enumerate(devices):
-            tab_body = Gtk.Box()
-            tab_body.pack_start(StubPanel(dev, State.CONNECTING, profile), True, True, 0)
-            self.notebook.append_page(tab_body, Gtk.Label(label=dev.name))
-
             wrapper = WorkerWrapper(dev)
-            if profile is not None:
-                wrapper.profile = profile
+            wrapper.profile.value = profile
             self.wrappers.append(wrapper)
+
+            tab_body = Gtk.Box()
+            tab_body.pack_start(StubPanel(dev, State.CONNECTING, wrapper.profile), True, True, 0)
+            self.notebook.append_page(tab_body, Gtk.Label(label=dev.name))
 
             glib_wait_future(Worker.create(dev), self.on_worker_created, i)
         self.notebook.show_all()
@@ -187,7 +179,7 @@ class MainWindow(Gtk.ApplicationWindow):
     def set_nth_page(self, index, panel):
         tab = self.notebook.get_nth_page(index)
         for c in tab.get_children():
-            tab.remove(c)
+            c.destroy()
         tab.pack_start(panel, True, True, 0)
         self.notebook.show_all()
 
@@ -205,7 +197,7 @@ class MainWindow(Gtk.ApplicationWindow):
             glib_wait_future(Worker.create(wrapper.address), self.on_worker_created, index)
         else:
             LOGGER.info(f'Reconnecting to {wrapper.address} without profile')
-            wrapper.profile = None
+            wrapper.profile.value = None
             glib_wait_future(Worker.create(wrapper.address), self.on_worker_created, index)
 
     def disconnect_device(self, index: int):
@@ -232,7 +224,7 @@ class MainWindow(Gtk.ApplicationWindow):
         wrapper.worker = worker
         worker.connect(Worker.CONNECTION_ERROR, partial(self.on_connection_error, index=index))
 
-        self.set_nth_page(index, DevicePanel(worker))
+        self.set_nth_page(index, DevicePanel(worker, wrapper.profile))
 
     def on_connection_error(self, _: Worker, msg: str, *, index: int):
         response = show_reconnect_dialog(self, self.wrappers[index].address, msg)
@@ -263,7 +255,7 @@ class MainWindow(Gtk.ApplicationWindow):
             return
 
         for w in self.wrappers:
-            w.profile = profile
+            w.profile.value = profile
 
     def on_load_one(self, action, value):
         profile = self.read_profile("Chose profile for selected device...")
@@ -271,4 +263,4 @@ class MainWindow(Gtk.ApplicationWindow):
             return
 
         page = self.notebook.get_current_page()
-        self.wrappers[page].profile = profile
+        self.wrappers[page].profile.value = profile

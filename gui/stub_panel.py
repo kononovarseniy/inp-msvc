@@ -2,9 +2,11 @@ import logging
 from enum import Enum
 from typing import Optional
 
-from gi.repository import Gtk, Gdk, GObject, GLib
+from gi.repository import Gtk, Gdk, GObject
 
 from device.device import DeviceAddress
+from gui.observable import Observable
+from gui.widgets.profile_label import create_profile_label
 from gui.worker import Profile
 
 LOGGER = logging.getLogger('stub-panel')
@@ -18,17 +20,17 @@ class State(Enum):
 class StubPanel(Gtk.Grid):
     RECONNECT_CLICKED = 'reconnect-clicked'
 
-    def __init__(self, address: DeviceAddress, state: State, profile: Optional[Profile]):
+    def __init__(self, address: DeviceAddress, state: State, profile: Observable[Optional[Profile]]):
         super().__init__()
 
         self._address = address
         self._state = state
-        self._profile = profile
 
         self.override_background_color(Gtk.StateType.NORMAL, Gdk.RGBA.from_color(Gdk.color_parse('white')))
 
         self._status_label = Gtk.Label()
-        self._profile_label = Gtk.Label()
+        profile_label = create_profile_label(profile)
+        profile_label.set_xalign(0)
 
         self._connect_with_profile_button = Gtk.Button('Connect, use profile')
         self._connect_with_profile_button.set_no_show_all(True)
@@ -46,7 +48,7 @@ class StubPanel(Gtk.Grid):
         grid.set_hexpand(True)
         grid.set_vexpand(True)
         grid.attach(self._status_label, 0, 0, 2, 1)
-        grid.attach(self._profile_label, 0, 1, 2, 1)
+        grid.attach(profile_label, 0, 1, 2, 1)
         grid.attach(self._connect_with_profile_button, 0, 2, 1, 1)
         grid.attach(self._connect_without_profile_button, 1, 2, 1, 1)
 
@@ -67,11 +69,6 @@ class StubPanel(Gtk.Grid):
     def address(self):
         return self._address
 
-    @address.setter
-    def address(self, address: DeviceAddress):
-        self._address = address
-        self._update()
-
     def _update(self):
         if self._state == State.CONNECTING:
             self._status_label.set_markup(f'Connecting to <b>{self._address}</b>')
@@ -81,10 +78,6 @@ class StubPanel(Gtk.Grid):
             self._status_label.set_markup(f'Connection to <b>{self.address}</b> failed')
             self._connect_with_profile_button.show()
             self._connect_without_profile_button.show()
-        if self._profile:
-            self._profile_label.set_markup(f'Profile: <b>{GLib.markup_escape_text(self._profile.filename)}</b>')
-        else:
-            self._profile_label.set_markup(f'Profile: <b>not set</b>')
 
     @GObject.Signal(name=RECONNECT_CLICKED)
     def _on_reconnect_clicked(self, use_profile: bool):
