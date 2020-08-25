@@ -169,7 +169,7 @@ class Worker(GObject.Object):
         return self._controller_state
 
     def _cell_id(self, cell_index: int) -> str:
-        return f'{self.get_device_address().name}#{cell_index}'
+        return self._device.cells[cell_index - 1].name
 
     def _get_cell_and_state(self, cell_index):
         cell = self._device.cells[cell_index - 1]
