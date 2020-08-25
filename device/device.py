@@ -7,7 +7,7 @@ from device.command import Command, CommandType, CommandResponse, encode_command
 from device.helpers import code_to_float, float_to_code
 from device.registers import CellRegister, ControllerRegister, CellCSR, ControllerSR, TemperatureSensor
 
-_log = logging.getLogger("Device")
+LOGGER = logging.getLogger("device")
 
 MAX_CURRENT_DAC_CODE = (1 << 10) - 1
 MAX_CURRENT_ADC_CODE = (1 << 12) - 1
@@ -49,7 +49,7 @@ class RegisterProvider:
         cmd = Command(CommandType.WRITE, self.cell, register, data, True)
         resp = self._socket.send_command(cmd)
         if not resp.is_crc_ok:
-            _log.warning(f'Writing register {repr(register)} of {self.name}: bad CRC')
+            LOGGER.warning(f'Writing register {repr(register)} of {self.name}: bad CRC')
 
         self._cache[register] = data
         return resp.data
@@ -58,7 +58,7 @@ class RegisterProvider:
         cmd = Command(CommandType.READ, self.cell, register, 0, True)
         resp = self._socket.send_command(cmd)
         if not resp.is_crc_ok:
-            _log.warning(f'Reading register {repr(register)} of {self.name}: bad CRC')
+            LOGGER.warning(f'Reading register {repr(register)} of {self.name}: bad CRC')
 
         self._cache[register] = resp.data
         return resp.data
@@ -169,20 +169,16 @@ class Cell:
     def get_measured_voltage(self) -> float:
         adc = self.registers.read(CellRegister.Vmes)
         adc_max = self.registers.read_cached(CellRegister.Umesmax)
-        try:
-            return code_to_float(adc, MAX_ADC_CODE, 0, adc_max)
-        except ValueError:
-            _log.exception('get_measured_voltage:Incorrect device state')
-            raise
+        if adc > MAX_ADC_CODE:
+            LOGGER.warning(f'{self.name}: Invalid measured voltage ADC code {adc}')
+        return code_to_float(adc, MAX_ADC_CODE, 0, adc_max)
 
     def get_measured_current(self) -> float:
         adc = self.registers.read(CellRegister.Imes)
         adc_max = self.registers.read_cached(CellRegister.Imesmax)
-        try:
-            return code_to_float(adc, MAX_CURRENT_ADC_CODE, 0, adc_max)
-        except ValueError:
-            _log.exception('get_measured_current:Incorrect device state')
-            raise
+        if adc > MAX_CURRENT_ADC_CODE:
+            LOGGER.warning(f'{self.name}: Invalid measured current ADC code {adc}')
+        return code_to_float(adc, MAX_CURRENT_ADC_CODE, 0, adc_max)
 
     def get_current_limit_range(self) -> Tuple[float, float]:
         return 0, self.registers.read_cached(CellRegister.Imax)
@@ -191,26 +187,22 @@ class Cell:
         r_min, r_max = self.get_current_limit_range()
 
         if limit > r_max or limit < r_min:
-            _log.warning(
+            LOGGER.warning(
                 f'Attempt to set current limit of {self.name} to {limit} uA, '
                 f'but allowed range is {r_min}-{r_max}uA')
             raise ValueError('Current limit is out of range')
-        try:
-            code = float_to_code(limit, MAX_CURRENT_DAC_CODE, r_min, r_max)
-        except ValueError:
-            _log.exception('set_current_limit:Incorrect device state')
-            raise
+        code = float_to_code(limit, MAX_CURRENT_DAC_CODE, r_min, r_max)
         code = self.registers.write(CellRegister.Iset, code)
+        if code > MAX_CURRENT_DAC_CODE:
+            LOGGER.warning(f'{self.name}: Invalid current limit DAC code {code}')
         return code_to_float(code, MAX_CURRENT_DAC_CODE, r_min, r_max)
 
     def get_current_limit(self) -> float:
         r_min, r_max = self.get_current_limit_range()
         code = self.registers.read(CellRegister.Iset)
-        try:
-            return code_to_float(code, MAX_CURRENT_DAC_CODE, r_min, r_max)
-        except ValueError:
-            _log.exception('get_current_limit:Incorrect device state')
-            raise
+        if code > MAX_CURRENT_DAC_CODE:
+            LOGGER.warning(f'{self.name}: Invalid current limit DAC code {code}')
+        return code_to_float(code, MAX_CURRENT_DAC_CODE, r_min, r_max)
 
     def get_output_voltage_range(self) -> Tuple[float, float]:
         return self.registers.read_cached(CellRegister.Umin), \
@@ -220,26 +212,22 @@ class Cell:
         r_min, r_max = self.get_output_voltage_range()
 
         if voltage > r_max or voltage < r_min:
-            _log.warning(
+            LOGGER.warning(
                 f'Attempt to set voltage of {self.name} to {voltage}V, '
                 f'but allowed range is {r_min}-{r_max}V')
             raise ValueError('Voltage is out of range')
-        try:
-            code = float_to_code(voltage, MAX_DAC_CODE, r_min, r_max)
-        except ValueError:
-            _log.exception('set_output_voltage:Incorrect device state')
-            raise
+        code = float_to_code(voltage, MAX_DAC_CODE, r_min, r_max)
         code = self.registers.write(CellRegister.VsetON, code)
+        if code > MAX_DAC_CODE:
+            LOGGER.warning(f'{self.name}: Invalid output voltage DAC code {code}')
         return code_to_float(code, MAX_DAC_CODE, r_min, r_max)
 
     def get_output_voltage(self) -> float:
         r_min, r_max = self.get_output_voltage_range()
         code = self.registers.read(CellRegister.VsetON)
-        try:
-            return code_to_float(code, MAX_DAC_CODE, r_min, r_max)
-        except ValueError:
-            _log.exception('get_output_voltage:Incorrect device state')
-            raise
+        if code > MAX_DAC_CODE:
+            LOGGER.warning(f'{self.name}: Invalid output voltage DAC code {code}')
+        return code_to_float(code, MAX_DAC_CODE, r_min, r_max)
 
     def set_output_voltage_enabled(self, enabled: bool) -> bool:
         val = self.registers.read(CellRegister.ctl_stat)
@@ -283,7 +271,7 @@ class Device:
         self.controller = Controller(address.name, sock)
         """Controller of the device. It contains device global registers"""
 
-        self.cells = [Cell(i + 1, f'{address.name}[{i + 1}]', sock) for i in range(cell_count)]
+        self.cells = [Cell(i + 1, f'{address.name}#{i + 1}', sock) for i in range(cell_count)]
         """
         Channels of the device.
         Here cells are indexed starting from 0, but in device they are numbered starting from 1.

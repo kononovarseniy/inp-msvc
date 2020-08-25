@@ -4,8 +4,6 @@ def code_to_float(code: int, max_code: int, min_value: float, max_value: float) 
                          f'(min_value = {min_value}, max_value = {max_value})')
     if max_code <= 0:
         raise ValueError(f'max_code should be strictly greater than 0. (max_code = {max_code})')
-    if code < 0 or code > max_code:
-        raise ValueError(f'code should be in range [0, max_code]. (code = {code}, max_code = {max_code})')
     return min_value + code / max_code * (max_value - min_value)
 
 
@@ -15,7 +13,4 @@ def float_to_code(value: float, max_code: int, min_value: float, max_value: floa
                          f'(min_value = {min_value}, max_value = {max_value})')
     if max_code <= 0:
         raise ValueError(f'max_code should be strictly greater than 0. (max_code = {max_code})')
-    if value < min_value or value > max_value:
-        raise ValueError(f'value should be in range [min_value, max_value]. '
-                         f'(value = {value}, min_value = {min_value}, max_value = {max_value})')
     return round((value - min_value) / (max_value - min_value) * max_code)
