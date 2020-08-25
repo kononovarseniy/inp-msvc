@@ -113,7 +113,7 @@ class WorkerWrapper:
     def __init__(self, address: DeviceAddress):
         self._address = address
         self._worker: Optional[Worker] = None
-        self.profile = Observable(None)
+        self.profile = Observable[Profile](None)
         self.profile.add_observer(lambda _: self._load_profile())
 
     def _load_profile(self):

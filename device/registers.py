@@ -135,7 +135,11 @@ class CellRegister(IntEnum):
     """ (read/write) Speed of U ramp down (Volt/sec)"""
 
     prottim = 9
-    """ (read/write) Delay to switch STanDBY voltage after IOVLD"""
+    """
+    (read/write) Delay to switch STanDBY voltage after IOVLD
+    
+    When prottim is 0, the cell goes into current source mode when the protection is triggered
+    """
 
     Umin = 10
     """ (read/write) Real output voltage (Volt) at 0 dac data"""
@@ -152,9 +156,10 @@ class CellRegister(IntEnum):
     Imesmax = 14
     """ (read/write) Calculated(calibrated) value (uA) coresponding to maximal ADC value"""
 
+    MINUS_n_BITS = 15
     """ (read only)
     (0x8000 | 12<<8 | 10<<4 | 12) ; minus‐>0x8000; 12<<8‐>12 ADC bits; 10<<4‐>10 I_DAC bits; 12‐>12 U_DAC bits;"""
-    MINUS_n_BITS = 15
+
     UOKmin = 16
     """ (read/write) Lower error threshold of the cell (do not change!)"""
 

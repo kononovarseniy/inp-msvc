@@ -277,7 +277,6 @@ class DeviceAddress:
 class Device:
     def __init__(self, address: DeviceAddress, cell_count: int, timeout: Optional[float]):
         self.address = address
-        self.cell_count = cell_count
 
         sock = DeviceSocket(address.address, timeout)
 
@@ -305,4 +304,3 @@ class Device:
         self._socket = None
         self.controller = None
         self.cells = None
-        self.cell_count = 0

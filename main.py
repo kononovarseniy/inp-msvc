@@ -5,10 +5,15 @@ import gi
 
 gi.require_version("Gtk", "3.0")
 
+logging.basicConfig(level=logging.NOTSET)
+
+from gui import settings
+from default_values import controller_defaults, cell_defaults
 from gui.main import main
 
-logging.basicConfig(level=logging.NOTSET)
 LOGGER = logging.getLogger()
+
+settings.defaults = settings.DefaultValues(controller_defaults, cell_defaults)
 
 if __name__ == '__main__':
     try:

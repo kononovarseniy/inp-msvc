@@ -8,6 +8,7 @@ from gi.repository import GObject, GLib
 
 from device.device import DeviceAddress, Device, Cell, Controller
 from device.registers import TemperatureSensor
+from gui import settings
 from gui.state import DeviceParameter, \
     CellState, CellUpdates, CellSettings, \
     read_cell_state, read_cell_updates, write_cell_settings, update_cell_state, \
@@ -55,12 +56,27 @@ def _read_device_state(device: Device) -> Tuple[ControllerState, List[CellState]
 
 def _connect(executor: ThreadPoolExecutor, address: DeviceAddress) -> 'Worker':
     try:
+        # Connect
+        LOGGER.debug(f'Connecting to {address}')
         dev = Device(address, CHANNEL_COUNT, SOCKET_TIMEOUT)
+        # Write defaults
+        LOGGER.debug(f'Writing defaults to {address}')
+        if settings.defaults is None:
+            LOGGER.warning(f'No default values')
+        else:
+            for r, v in settings.defaults.controller.items():
+                dev.controller.write(r, v)
+            for cell in dev.cells:
+                for r, v in settings.defaults.cell.items():
+                    cell.write(r, v)
+        # Read state
+        LOGGER.debug(f'Reading state from {address}')
         ctl, cells = _read_device_state(dev)
     except (EOFError, OSError) as e:
         msg = f'Failed to connect to {address}: {e}'
         LOGGER.error(msg)
         raise ConnectionError(msg)
+
     LOGGER.info(f'Connected to {address}')
     return Worker(executor, dev, ctl, cells)
 
