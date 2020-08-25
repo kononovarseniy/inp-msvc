@@ -166,12 +166,18 @@ class Cell:
     def get_csr(self) -> CellCSR:
         return CellCSR(self.registers.read(CellRegister.ctl_stat))
 
+    def get_measured_voltage_range(self) -> Tuple[float, float]:
+        return 0, self.registers.read_cached(CellRegister.Umesmax)
+
     def get_measured_voltage(self) -> float:
         adc = self.registers.read(CellRegister.Vmes)
         adc_max = self.registers.read_cached(CellRegister.Umesmax)
         if adc > MAX_ADC_CODE:
             LOGGER.warning(f'{self.name}: Invalid measured voltage ADC code {adc}')
         return code_to_float(adc, MAX_ADC_CODE, 0, adc_max)
+
+    def get_measured_current_range(self) -> Tuple[float, float]:
+        return 0, self.registers.read_cached(CellRegister.Imesmax)
 
     def get_measured_current(self) -> float:
         adc = self.registers.read(CellRegister.Imes)

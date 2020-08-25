@@ -3,6 +3,8 @@ from typing import TypeVar, Callable, Any, Iterable, Optional
 
 from gi.repository import Gtk, Gdk, GObject
 
+from gui.checks import check_measured_voltage, check_voltage_set, check_measured_current, check_cell_status
+from gui.util import make_markup, render_cell, ErrorType
 from gui.widgets.error_label import create_error_label
 from gui.observable import Observable
 from gui.widgets.profile_label import create_profile_label
@@ -22,52 +24,20 @@ LOGGER = logging.getLogger('device-panel')
 T = TypeVar('T')
 
 
-def warning_markup(text: Any) -> str:
-    return f'<span background="yellow" foreground="black">{text}</span>'
-
-
-def error_markup(text: Any) -> str:
-    return f'<span background="red" foreground="white" weight="bold">{text}</span>'
-
-
-def good_markup(text: Any) -> str:
-    return f'<span background="green" foreground="white" weight="bold">{text}</span>'
-
-
-def make_markup(state: str, text: Any) -> str:
-    if state == 'ok':
-        return str(text)
-    elif state == 'warning':
-        return warning_markup(text)
-    elif state == 'error':
-        return error_markup(text)
-    elif state == 'good':
-        return good_markup(text)
-
-
-def render_cell(cell: Gtk.CellRenderer, text: Any, state: str, editable: bool):
-    cell.props.markup = make_markup(state, text)
-
-    if state == 'ok':
-        cell.props.cell_background = 'white' if editable else 'light gray'
-    elif state == 'warning':
-        cell.props.cell_background = 'yellow'
-    elif state == 'error':
-        cell.props.cell_background = 'red'
-    elif state == 'good':
-        cell.props.cell_background = 'green'
-
-
-def cell_index_data_func(cell: Gtk.CellRenderer, state: CellState):
-    render_cell(cell, state.cell_index, 'good' if state.enabled.actual else 'ok', False)
-
-
 def make_parameter_data_func(get: Callable[[CellState], DeviceParameter]):
     def data_func(cell: Gtk.CellRendererText, state: CellState):
         var = get(state)
-        render_cell(cell, f'{var.desired:.0f}', 'warning' if var.waiting else 'ok', True)
+        render_cell(cell, f'{var.desired:.0f}', ErrorType.warning if var.waiting else ErrorType.ok, True)
 
     return data_func
+
+
+def make_format_data_func(fmt: Callable[[CellState], str], check: Callable[[CellState], ErrorType]):
+    return lambda cell, state: render_cell(cell, fmt(state), check(state), False)
+
+
+def cell_index_data_func(cell: Gtk.CellRenderer, state: CellState):
+    render_cell(cell, state.cell_index, ErrorType.good if state.enabled.actual else ErrorType.ok, False)
 
 
 def cell_enabled_data_func(cell: Gtk.CellRendererToggle, state: CellState):
@@ -80,37 +50,39 @@ def cell_enabled_data_func(cell: Gtk.CellRendererToggle, state: CellState):
         cell.props.cell_background = 'light gray'
 
 
-def measured_voltage_data_func(cell: Gtk.CellRenderer, state: CellState):
-    v_set = state.voltage_set.actual
-    v_mes = state.voltage_measured
-    up = state.csr.ramp_up_active
-    down = state.csr.ramp_down_active
-    en = state.enabled.actual
+def format_voltage_set(state: CellState) -> str:
+    return f'{state.voltage_set.actual:.0f}'
 
-    if en:
-        bad = abs(v_set - v_mes) >= 1
-    else:
-        bad = v_mes > 5
 
+def format_measured_voltage(state: CellState) -> str:
     slope = ''
-    if up:
+    if state.csr.ramp_up_active:
         slope = '↑ '
-    if down:
+    if state.csr.ramp_down_active:
         slope = '↓ '
-
-    render_cell(cell, f'<b>{slope}</b>{v_mes:.2f}', 'error' if bad else 'ok', False)
-
-
-def voltage_set_data_func(cell: Gtk.CellRenderer, state: CellState):
-    cell.props.text = f'{state.voltage_set.actual:.0f}'
+    return f'<b>{slope}</b>{state.voltage_measured:.2f}'
 
 
-def measured_current_data_func(cell: Gtk.CellRenderer, state: CellState):
-    i_lim = state.current_limit.actual
-    i_mes = state.current_measured
+def format_measured_current(state: CellState):
+    return f'{state.current_measured:.2f}'
 
-    bad = i_mes > i_lim
-    render_cell(cell, f'{i_mes:.2f}', 'error' if bad else 'ok', False)
+
+def format_cell_status(state: CellState) -> str:
+    res = ''
+    if state.csr.error:
+        res += 'E'
+    if state.csr.current_overload:
+        res += 'I'
+    if state.csr.base_voltage_error:
+        res += 'B'
+    if state.csr.hardware_failure_error:
+        res += 'H'
+    if state.csr.standby:
+        res += 'S'
+    if state.csr.io_protection:
+        res += 'P'
+
+    return res if res else '\u2014'
 
 
 def voltage_range_data_func(cell: Gtk.CellRendererText, state: CellState):
@@ -121,30 +93,6 @@ def voltage_range_data_func(cell: Gtk.CellRendererText, state: CellState):
 def current_limit_range_data_func(cell: Gtk.CellRendererText, state: CellState):
     l, h = state.current_limit_range
     cell.props.text = f'{l:d}..{h:d}'
-
-
-def cell_status_data_func(cell: Gtk.CellRendererText, state: CellState):
-    err = False
-    msg = ''
-    if state.csr.error:
-        msg += 'E'
-    if state.csr.current_overload:
-        msg += 'I'
-        err = True
-    if state.csr.base_voltage_error:
-        msg += 'B'
-        err = True
-    if state.csr.hardware_failure_error:
-        msg += 'H'
-        err = True
-    if state.csr.standby:
-        msg += 'S'
-        err = True
-    if state.csr.io_protection:
-        msg += 'P'
-        err = True
-
-    render_cell(cell, msg if msg else '\u2014', 'error' if err else 'ok', False)
 
 
 class NumberEntry(Gtk.Entry, Gtk.Editable):
@@ -164,7 +112,7 @@ class ParamLabel(Gtk.Label):
         super().__init__()
 
         self._text = label_text
-        self._state = 'ok'
+        self._state = ErrorType.ok
         self._empty = True
 
         self.set_markup(self._text)
@@ -174,7 +122,7 @@ class ParamLabel(Gtk.Label):
         self._text = text
         self._update()
 
-    def set_state(self, state: str):
+    def set_state(self, state: ErrorType):
         self._state = state
         self._update()
 
@@ -217,7 +165,7 @@ class TempEditor(GObject.Object):
             self.desired.set_text(f'{param.desired}')
             self._empty = False
         self.actual.set_text(f'{param.actual} \u00B0C')
-        self.label.set_state('warning' if param.waiting else 'ok')
+        self.label.set_state(ErrorType.warning if param.waiting else ErrorType.ok)
 
 
 class DevicePanel(Gtk.Box):
@@ -318,11 +266,14 @@ class DevicePanel(Gtk.Box):
                                    make_parameter_data_func(lambda s: s.voltage_set),
                                    float, self._make_on_changed(Worker.set_output_voltage))
 
-        adapter.append_text_column(tree_view, 'Voltage, V\n(set)', voltage_set_data_func)
+        adapter.append_text_column(tree_view, 'Voltage, V\n(set)',
+                                   make_format_data_func(format_voltage_set, check_voltage_set))
 
-        adapter.append_text_column(tree_view, 'Voltage, V\n(measured)', measured_voltage_data_func)
+        adapter.append_text_column(tree_view, 'Voltage, V\n(measured)',
+                                   make_format_data_func(format_measured_voltage, check_measured_voltage))
 
-        adapter.append_text_column(tree_view, 'Measured\ncurrent, uA', measured_current_data_func)
+        adapter.append_text_column(tree_view, 'Measured\ncurrent, uA',
+                                   make_format_data_func(format_measured_current, check_measured_current))
 
         adapter.append_text_column(tree_view, 'Current\nlimit, uA',
                                    make_parameter_data_func(lambda s: s.current_limit),
@@ -336,7 +287,9 @@ class DevicePanel(Gtk.Box):
                                    make_parameter_data_func(lambda s: s.ramp_down_speed),
                                    int, self._make_on_changed(Worker.set_ramp_down_speed))
 
-        adapter.append_text_column(tree_view, 'Errors\n*', cell_status_data_func)
+        adapter.append_text_column(tree_view, 'Errors\n*',
+                                   make_format_data_func(format_cell_status, check_cell_status))
+
         adapter.append_text_column(tree_view, 'Voltage\nrange, V', voltage_range_data_func)
         adapter.append_text_column(tree_view, 'Current limit\nrange, uA', current_limit_range_data_func)
 
@@ -409,10 +362,10 @@ class DevicePanel(Gtk.Box):
                 msg.append('HV protection')
             if len(msg):
                 state_text.set_text(', '.join(msg))
-                state_text.set_state('error')
+                state_text.set_state(ErrorType.error)
             else:
                 state_text.set_text('OK')
-                state_text.set_state('good')
+                state_text.set_state(ErrorType.good)
 
         return grid, update_all
 

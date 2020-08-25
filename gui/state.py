@@ -73,6 +73,10 @@ class _CellConstants:
     """Allowed voltage range"""
     current_limit_range: Tuple[float, float]
     """Allowed current limit range"""
+    measured_voltage_range: Tuple[float, float]
+    """Measured voltage range"""
+    measured_current_range: Tuple[float, float]
+    """Measured current range"""
 
 
 @dataclass
@@ -116,7 +120,9 @@ def read_cell_state(cell: Cell) -> CellState:
         False,
 
         cell.get_output_voltage_range(),
-        cell.get_current_limit_range()
+        cell.get_current_limit_range(),
+        cell.get_measured_voltage_range(),
+        cell.get_measured_current_range()
     )
 
 
