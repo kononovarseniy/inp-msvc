@@ -6,10 +6,12 @@ from gi.repository import Gtk, Gdk, GObject
 from gui import checks
 from gui.checks import ErrorType
 from gui.markup import make_markup, render_cell
+from gui.util import NumberEntry
 from gui.widgets.error_label import create_error_label
 from gui.observable import Observable
 from gui.widgets.profile_label import create_profile_label
 from gui.treeview_helpers import TreeModelAdapter, get_row_being_edited
+from gui.widgets.status_label import create_status_label
 from gui.worker import Worker, Profile
 from gui.state import CellState, DeviceParameter
 
@@ -96,49 +98,16 @@ def current_limit_range_data_func(cell: Gtk.CellRendererText, state: CellState):
     cell.props.text = f'{l:d}..{h:d}'
 
 
-class NumberEntry(Gtk.Entry, Gtk.Editable):
-    def __init__(self):
-        super().__init__()
-
-    def do_insert_text(self, new_text, length, position):
-        if all(c.isdigit() for c in new_text):
-            self.get_buffer().insert_text(position, new_text, length)
-            return position + len(new_text)
-        else:
-            return position
-
-
-class ParamLabel(Gtk.Label):
-    def __init__(self, label_text: str):
-        super().__init__()
-
-        self._text = label_text
-        self._state = ErrorType.ok
-        self._empty = True
-
-        self.set_markup(self._text)
-        self.set_xalign(1)
-
-    def set_text(self, text: str):
-        self._text = text
-        self._update()
-
-    def set_state(self, state: ErrorType):
-        self._state = state
-        self._update()
-
-    def _update(self):
-        self.set_markup(make_markup(self._state, self._text))
-
-
 class TempEditor(GObject.Object):
     def __init__(self, grid: Gtk.Grid, label_text: str, x: int, y: int):
         super().__init__()
 
         self._empty = True
 
-        self.label = ParamLabel(label_text)
-        grid.attach(self.label, x, y, 1, 1)
+        self.state = Observable(ErrorType.ok)
+        label = create_status_label(label_text, self.state)
+        label.set_xalign(1)
+        grid.attach(label, x, y, 1, 1)
 
         self.desired = NumberEntry()
         self.desired.set_width_chars(4)
@@ -166,7 +135,7 @@ class TempEditor(GObject.Object):
             self.desired.set_text(f'{param.desired}')
             self._empty = False
         self.actual.set_text(f'{param.actual} \u00B0C')
-        self.label.set_state(ErrorType.warning if param.waiting else ErrorType.ok)
+        self.state.value = checks.check_parameter(param)
 
 
 class DevicePanel(Gtk.Box):
@@ -302,8 +271,8 @@ class DevicePanel(Gtk.Box):
         grid.set_column_spacing(4)
         grid.set_hexpand(True)
 
-        def attach_with_label(label_str: str, x: int, y: int, *args: Iterable[Gtk.Widget]) -> ParamLabel:
-            label = ParamLabel(label_str)
+        def attach_with_label(label_str: str, x: int, y: int, *args: Iterable[Gtk.Widget]) -> Gtk.Label:
+            label = Gtk.Label(label=label_str)
             grid.attach(label, x, y, 1, 1)
             for i, w in enumerate(args):
                 grid.attach(w, x + 1 + i, y, 1, 1)
@@ -334,9 +303,10 @@ class DevicePanel(Gtk.Box):
         t_shutdown = TempEditor(grid, 'T<sub>shutdown</sub>:', 6, 2)
         t_shutdown.connect('completed', lambda _, val: self.worker.set_shutdown_temp(val))
 
-        state_label = ParamLabel('state:')
+        state_label = Gtk.Label(label='state:')
+        state_label.set_xalign(1)
         grid.attach(state_label, 1, 3, 1, 1)
-        state_text = ParamLabel('')
+        state_text = Gtk.Label(label='')
         state_text.set_xalign(0)
         grid.attach(state_text, 2, 3, 6, 1)
 
@@ -362,11 +332,9 @@ class DevicePanel(Gtk.Box):
             if state.status.high_voltage_protection_active:
                 msg.append('HV protection')
             if len(msg):
-                state_text.set_text(', '.join(msg))
-                state_text.set_state(ErrorType.error)
+                state_text.set_markup(make_markup(ErrorType.error, ', '.join(msg)))
             else:
-                state_text.set_text('OK')
-                state_text.set_state(ErrorType.good)
+                state_text.set_markup(make_markup(ErrorType.good, 'OK'))
 
         return grid, update_all
 
