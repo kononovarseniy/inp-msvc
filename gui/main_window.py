@@ -7,6 +7,7 @@ from gi.repository import Gtk, Gio
 
 from device.device import DeviceAddress
 from gui import files
+from gui.checks import ErrorType, DeviceErrorChecker
 from gui.device_panel import DevicePanel
 from gui.observable import Observable
 from gui.stub_panel import StubPanel, State
@@ -113,8 +114,11 @@ class WorkerWrapper:
     def __init__(self, address: DeviceAddress):
         self._address = address
         self._worker: Optional[Worker] = None
-        self.profile = Observable[Profile](None)
-        self.profile.add_observer(lambda _: self._load_profile())
+        # noinspection PyCallingNonCallable
+        self._error = Observable[ErrorType](ErrorType.ok)
+        # noinspection PyCallingNonCallable
+        self._profile = Observable[Profile](None)
+        self._profile.add_observer(lambda _: self._load_profile())
 
     def _load_profile(self):
         try:
@@ -137,6 +141,14 @@ class WorkerWrapper:
     def worker(self, value: Optional[Worker]):
         self._worker = value
         self._load_profile()
+
+    @property
+    def error(self) -> Observable[ErrorType]:
+        return self._error
+
+    @property
+    def profile(self) -> Observable[Profile]:
+        return self._profile
 
 
 class MainWindow(Gtk.ApplicationWindow):
@@ -163,7 +175,6 @@ class MainWindow(Gtk.ApplicationWindow):
             self.notebook.append_page(tab_body, Gtk.Label(label=dev.name))
 
             glib_wait_future(Worker.create(dev), self.on_worker_created, i)
-        self.notebook.show_all()
 
         # a grid to attach the widgets
         grid = Gtk.Grid()
@@ -224,6 +235,8 @@ class MainWindow(Gtk.ApplicationWindow):
         wrapper.worker = worker
         worker.connect(Worker.CONNECTION_ERROR, partial(self.on_connection_error, index=index))
 
+        DeviceErrorChecker(worker, output=wrapper.error)  # Connects itself to worker signals
+
         self.set_nth_page(index, DevicePanel(worker, wrapper.profile))
 
     def on_connection_error(self, _: Worker, msg: str, *, index: int):
@@ -249,7 +262,7 @@ class MainWindow(Gtk.ApplicationWindow):
         except files.FormatError as e:
             LOGGER.error(f'Invalid profile: {e.message}')
 
-    def on_load_all(self, action, value):
+    def on_load_all(self, _action, _value):
         profile = self.read_profile("Chose profile for all devices...")
         if profile is None:
             return
@@ -257,7 +270,7 @@ class MainWindow(Gtk.ApplicationWindow):
         for w in self.wrappers:
             w.profile.value = profile
 
-    def on_load_one(self, action, value):
+    def on_load_one(self, _action, _value):
         profile = self.read_profile("Chose profile for selected device...")
         if profile is None:
             return

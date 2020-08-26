@@ -3,8 +3,9 @@ from typing import TypeVar, Callable, Any, Iterable, Optional
 
 from gi.repository import Gtk, Gdk, GObject
 
-from gui.checks import check_measured_voltage, check_voltage_set, check_measured_current, check_cell_status
-from gui.util import make_markup, render_cell, ErrorType
+from gui import checks
+from gui.checks import ErrorType
+from gui.markup import make_markup, render_cell
 from gui.widgets.error_label import create_error_label
 from gui.observable import Observable
 from gui.widgets.profile_label import create_profile_label
@@ -267,13 +268,13 @@ class DevicePanel(Gtk.Box):
                                    float, self._make_on_changed(Worker.set_output_voltage))
 
         adapter.append_text_column(tree_view, 'Voltage, V\n(set)',
-                                   make_format_data_func(format_voltage_set, check_voltage_set))
+                                   make_format_data_func(format_voltage_set, checks.check_actual_voltage_set))
 
         adapter.append_text_column(tree_view, 'Voltage, V\n(measured)',
-                                   make_format_data_func(format_measured_voltage, check_measured_voltage))
+                                   make_format_data_func(format_measured_voltage, checks.check_measured_voltage))
 
         adapter.append_text_column(tree_view, 'Measured\ncurrent, uA',
-                                   make_format_data_func(format_measured_current, check_measured_current))
+                                   make_format_data_func(format_measured_current, checks.check_measured_current))
 
         adapter.append_text_column(tree_view, 'Current\nlimit, uA',
                                    make_parameter_data_func(lambda s: s.current_limit),
@@ -288,7 +289,7 @@ class DevicePanel(Gtk.Box):
                                    int, self._make_on_changed(Worker.set_ramp_down_speed))
 
         adapter.append_text_column(tree_view, 'Errors\n*',
-                                   make_format_data_func(format_cell_status, check_cell_status))
+                                   make_format_data_func(format_cell_status, checks.check_cell_status))
 
         adapter.append_text_column(tree_view, 'Voltage\nrange, V', voltage_range_data_func)
         adapter.append_text_column(tree_view, 'Current limit\nrange, uA', current_limit_range_data_func)
@@ -378,12 +379,12 @@ class DevicePanel(Gtk.Box):
     def _on_cell_updated(self, _: Worker, index: int) -> None:
         self._update_row(index - 1)
 
-    def _on_enable_all(self, button):
+    def _on_enable_all(self, _):
         for i in range(1, self.worker.get_cell_count() + 1):
             state = self.worker.get_cell_state(i)
             if state.auto_enable:
                 self.worker.set_enabled(i, True)
 
-    def _on_disable_all(self, button):
+    def _on_disable_all(self, _):
         for i in range(1, self.worker.get_cell_count() + 1):
             self.worker.set_enabled(i, False)
