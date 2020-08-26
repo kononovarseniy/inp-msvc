@@ -180,6 +180,7 @@ class MainWindow(Gtk.ApplicationWindow):
 
         for i, dev in enumerate(devices):
             wrapper = WorkerWrapper(dev)
+            wrapper.error.value = ErrorType.critical  # Device not connected
             self.wrappers.append(wrapper)
 
             tab_body = Gtk.Box()
@@ -198,36 +199,6 @@ class MainWindow(Gtk.ApplicationWindow):
 
         self.add_action(_new_action('file.load_all', self.on_load_all))
         self.add_action(_new_action('file.load_one', self.on_load_one))
-
-    def set_nth_page(self, index, panel):
-        tab = self.notebook.get_nth_page(index)
-        for c in tab.get_children():
-            c.destroy()
-        tab.pack_start(panel, True, True, 0)
-        self.notebook.show_all()
-
-    def show_stub_page(self, index: int):
-        wrapper = self.wrappers[index]
-        panel = StubPanel(wrapper.address, State.DISCONNECTED, wrapper.profile)
-        panel.connect(StubPanel.RECONNECT_CLICKED, lambda _, use_profile: self.reconnect_device(use_profile, index))
-        self.set_nth_page(index, panel)
-
-    def reconnect_device(self, use_profile: bool, index: int):
-        wrapper = self.wrappers[index]
-        wrapper.worker = None
-        if use_profile:
-            LOGGER.info(f'Reconnecting to {wrapper.address} using current profile')
-            glib_wait_future(Worker.create(wrapper.address), self.on_worker_created, index)
-        else:
-            LOGGER.info(f'Reconnecting to {wrapper.address} without profile')
-            wrapper.profile.value = None
-            glib_wait_future(Worker.create(wrapper.address), self.on_worker_created, index)
-
-    def disconnect_device(self, index: int):
-        wrapper = self.wrappers[index]
-        LOGGER.info(f'Disconnecting from {wrapper.address}')
-        wrapper.worker = None
-        self.show_stub_page(index)
 
     def on_worker_created(self, f: 'Future[Worker]', index: int):
         wrapper = self.wrappers[index]
@@ -261,6 +232,36 @@ class MainWindow(Gtk.ApplicationWindow):
             self.reconnect_device(False, index)
         else:
             self.disconnect_device(index)
+
+    def reconnect_device(self, use_profile: bool, index: int):
+        wrapper = self.wrappers[index]
+
+        if use_profile:
+            LOGGER.info(f'Reconnecting to {wrapper.address} using current profile')
+        else:
+            LOGGER.info(f'Reconnecting to {wrapper.address} without profile')
+            wrapper.profile.value = None
+
+        wrapper.worker = None
+        panel = StubPanel(wrapper.address, State.CONNECTING, wrapper.profile)
+        self.set_nth_page(index, panel)
+        glib_wait_future(Worker.create(wrapper.address), self.on_worker_created, index)
+
+    def disconnect_device(self, index: int):
+        wrapper = self.wrappers[index]
+        LOGGER.info(f'Disconnecting from {wrapper.address}')
+
+        wrapper.worker = None
+        panel = StubPanel(wrapper.address, State.DISCONNECTED, wrapper.profile)
+        panel.connect(StubPanel.RECONNECT_CLICKED, lambda _, use_profile: self.reconnect_device(use_profile, index))
+        self.set_nth_page(index, panel)
+
+    def set_nth_page(self, index, panel):
+        tab = self.notebook.get_nth_page(index)
+        for c in tab.get_children():
+            c.destroy()  # DevicePanel and StubPanel must be explicitly destroyed to free up resources.
+        tab.pack_start(panel, True, True, 0)
+        self.notebook.show_all()
 
     def read_profile(self, title: str):
         profile = show_profile_chooser_dialog(self, title)
