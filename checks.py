@@ -1,7 +1,8 @@
 from enum import IntEnum
 
-from gui.observable import Observable
-from gui.state import CellState, DeviceParameter, ControllerState
+from settings import check_settings
+from observable import Observable
+from state import CellState, DeviceParameter, ControllerState
 from gui.worker import Worker
 
 
@@ -29,9 +30,9 @@ def check_measured_voltage(state: CellState) -> ErrorType:
 
     if not is_in_range(v_mes, state.measured_voltage_range):
         return ErrorType.critical
-    if state.enabled.actual and abs(v_set - v_mes) >= 1:
+    if state.enabled.actual and abs(v_set - v_mes) >= check_settings.max_voltage_difference:
         return ErrorType.error
-    if not state.enabled.actual and v_mes > 5:
+    if not state.enabled.actual and v_mes > check_settings.max_voltage_when_off:
         return ErrorType.error
     return ErrorType.ok
 

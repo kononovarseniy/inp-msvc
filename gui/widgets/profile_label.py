@@ -2,8 +2,8 @@ from typing import Optional
 
 from gi.repository import Gtk, GLib
 
-from gui.observable import Observable
-from gui.worker import Profile
+from observable import Observable
+from profile import Profile
 
 
 def create_profile_label(observable_profile: Observable[Optional[Profile]]):

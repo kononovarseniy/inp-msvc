@@ -1,6 +1,23 @@
-from typing import Callable, Any, Optional, TypeVar, Generic, Union
+from typing import TypeVar, Optional, Generic, Union, Any, Callable
 
-from gi.repository import Gtk, GObject
+from gi.repository import GLib, Gtk, GObject
+
+
+def glib_wait_future(future, func, *args):
+    future.add_done_callback(lambda _: GLib.idle_add(func, future, *args))
+
+
+class NumberEntry(Gtk.Entry, Gtk.Editable):
+    def __init__(self):
+        super().__init__()
+
+    def do_insert_text(self, new_text, length, position):
+        if all(c.isdigit() for c in new_text):
+            self.get_buffer().insert_text(position, new_text, length)
+            return position + len(new_text)
+        else:
+            return position
+
 
 T = TypeVar('T')
 
@@ -54,7 +71,7 @@ class TreeModelAdapter(Generic[T]):
         return lambda column, cell, model, it, _: func(cell, self.get_row(it))
 
     def _make_edited_signal_handler(self, parse: Callable[[str], Any], on_changed: Callable[[T, Any], bool]):
-        def wrapper(cell, path: str, new_text: str):
+        def handler(_cell, path: str, new_text: str):
             try:
                 val = parse(new_text)
             except ValueError:
@@ -64,7 +81,7 @@ class TreeModelAdapter(Generic[T]):
                 if on_changed(self.get_row(it), val):
                     self.model.row_changed(path, it)
 
-        return wrapper
+        return handler
 
     def _make_toggled_signal_handler(self, on_changed: Callable[[T, bool], bool]):
         def wrapper(cell, path: str):
@@ -86,8 +103,6 @@ class TreeModelAdapter(Generic[T]):
         if editable:
             renderer.props.editable = True
             renderer.connect('edited', self._make_edited_signal_handler(parse_func, on_changed))
-        else:
-            renderer.props.cell_background = 'light gray'
 
         col = Gtk.TreeViewColumn(title, renderer)
         col.set_cell_data_func(renderer, self._make_data_func(data_func))
@@ -100,8 +115,6 @@ class TreeModelAdapter(Generic[T]):
         renderer = Gtk.CellRendererToggle()
         if on_changed:
             renderer.connect('toggled', self._make_toggled_signal_handler(on_changed))
-        else:
-            renderer.props.cell_background = 'light gray'
 
         col = Gtk.TreeViewColumn(title, renderer)
         col.set_cell_data_func(renderer, self._make_data_func(data_func))

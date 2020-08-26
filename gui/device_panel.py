@@ -3,17 +3,17 @@ from typing import TypeVar, Callable, Any, Iterable, Optional
 
 from gi.repository import Gtk, Gdk, GObject
 
-from gui import checks
-from gui.checks import ErrorType
+import checks
+from checks import ErrorType
 from gui.markup import make_markup, render_cell
-from gui.util import NumberEntry
+from gui.gtk_util import NumberEntry, get_row_being_edited, TreeModelAdapter
 from gui.widgets.error_label import create_error_label
-from gui.observable import Observable
+from observable import Observable
 from gui.widgets.profile_label import create_profile_label
-from gui.treeview_helpers import TreeModelAdapter, get_row_being_edited
 from gui.widgets.status_label import create_status_label
-from gui.worker import Worker, Profile
-from gui.state import CellState, DeviceParameter
+from gui.worker import Worker
+from profile import Profile
+from state import CellState, DeviceParameter
 
 STATUS_HELP_TEXT = """* Errors:
 \tE\tUnknown
@@ -91,11 +91,13 @@ def format_cell_status(state: CellState) -> str:
 def voltage_range_data_func(cell: Gtk.CellRendererText, state: CellState):
     l, h = state.voltage_range
     cell.props.text = f'{l:d}..{h:d}'
+    cell.props.cell_background = 'light gray'
 
 
 def current_limit_range_data_func(cell: Gtk.CellRendererText, state: CellState):
     l, h = state.current_limit_range
     cell.props.text = f'{l:d}..{h:d}'
+    cell.props.cell_background = 'light gray'
 
 
 class TempEditor(GObject.Object):

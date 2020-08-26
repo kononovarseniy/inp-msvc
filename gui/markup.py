@@ -2,7 +2,7 @@ from typing import Any
 
 from gi.repository import Gtk
 
-from gui.checks import ErrorType
+from checks import ErrorType
 
 
 def warning_markup(text: Any) -> str:

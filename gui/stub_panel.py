@@ -5,9 +5,9 @@ from typing import Optional
 from gi.repository import Gtk, Gdk, GObject
 
 from device.device import DeviceAddress
-from gui.observable import Observable
+from observable import Observable
 from gui.widgets.profile_label import create_profile_label
-from gui.worker import Profile
+from profile import Profile
 
 LOGGER = logging.getLogger('stub-panel')
 

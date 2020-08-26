@@ -1,21 +1,21 @@
 import logging
-from collections import defaultdict
 from concurrent.futures import Future, CancelledError
 from concurrent.futures.thread import ThreadPoolExecutor
-from typing import Tuple, List, Callable, TypeVar, Optional, Dict, Union, Iterable
+from typing import Tuple, List, Callable, TypeVar, Optional
 
 from gi.repository import GObject, GLib
 
+from settings import defaults
 from device.device import DeviceAddress, Device, Cell, Controller
 from device.registers import TemperatureSensor
-from gui import settings
-from gui.state import DeviceParameter, \
+from gui.gtk_util import glib_wait_future
+from profile import DeviceProfile
+from state import DeviceParameter, \
     CellState, CellUpdates, CellSettings, \
     read_cell_state, read_cell_updates, write_cell_settings, update_cell_state, \
     update_desired_state, update_actual_state, \
     ControllerState, ControllerUpdates, \
     read_controller_state, read_controller_updates, update_controller_state
-from gui.util import glib_wait_future
 
 T = TypeVar('T')
 
@@ -24,26 +24,6 @@ CHANNEL_COUNT = 16
 SOCKET_TIMEOUT = 10
 
 LOGGER = logging.getLogger('gui.worker')
-
-
-class DeviceProfile:
-    def __init__(self):
-        self.cell_settings: Dict[int, CellSettings] = dict()
-
-
-class Profile:
-    def __init__(self, filename: str):
-        super().__init__()
-        self._dict = defaultdict(DeviceProfile)
-        self.filename = filename
-
-    def __getitem__(self, device: Union[str, DeviceAddress]):
-        if isinstance(device, DeviceAddress):
-            device = device.name
-        return self._dict[device]
-
-    def device_names(self) -> Iterable[str]:
-        return self._dict.keys()
 
 
 def _read_device_updates(device: Device) -> Tuple[ControllerUpdates, List[CellUpdates]]:
@@ -61,13 +41,13 @@ def _connect(executor: ThreadPoolExecutor, address: DeviceAddress) -> 'Worker':
         dev = Device(address, CHANNEL_COUNT, SOCKET_TIMEOUT)
         # Write defaults
         LOGGER.debug(f'Writing defaults to {address}')
-        if settings.defaults is None:
+        if defaults is None:
             LOGGER.warning(f'No default values')
         else:
-            for r, v in settings.defaults.controller.items():
+            for r, v in defaults.controller.items():
                 dev.controller.write(r, v)
             for cell in dev.cells:
-                for r, v in settings.defaults.cell.items():
+                for r, v in defaults.cell.items():
                     cell.write(r, v)
         # Read state
         LOGGER.debug(f'Reading state from {address}')

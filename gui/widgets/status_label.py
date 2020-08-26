@@ -1,8 +1,8 @@
 from gi.repository import Gtk
 
-from gui.checks import ErrorType
+from checks import ErrorType
 from gui.markup import make_markup
-from gui.observable import Observable
+from observable import Observable
 
 
 def create_status_label(text: str, error_observable: Observable[ErrorType]):

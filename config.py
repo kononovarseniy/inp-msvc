@@ -1,17 +1,28 @@
 """
-This file contains settings writen to the device each time it is connected.
+This file contains program configuration.
+
+Users are free to edit this file.
 """
+import logging
 
-from device.registers import ControllerRegister as Ctl
 from device.registers import CellRegister as Cell
+from device.registers import ControllerRegister as Ctl
+from settings import check_settings, gui_settings, defaults
 
-controller_defaults = {
+logging.basicConfig(level=logging.NOTSET)
+
+check_settings.max_voltage_difference = 1
+check_settings.max_voltage_when_off = 10
+
+gui_settings.window_title = 'Voltage controller'
+
+defaults.controller = {
     Ctl.ccrc: 1,  # Always check CRC
 }
 
 # TODO: Write correct settings
 # Some values may not work correctly (I do not have full documentation)
-cell_defaults = {
+defaults.cell = {
     Cell.ccrc: 1,  # Always check CRC
     Cell.Ustdby: 0,  # Voltage in Stand By mode (current protection)
     Cell.prottim: 0,  # Current source mode when the protection is triggered

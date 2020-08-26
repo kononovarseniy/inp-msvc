@@ -1,10 +1,9 @@
 import csv
 import logging
-from collections import defaultdict
 
 from device.device import DeviceAddress
-from gui.worker import DeviceProfile, Profile
-from gui.state import CellSettings
+from state import CellSettings
+from profile import Profile
 
 
 class FormatError(Exception):

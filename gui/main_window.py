@@ -5,24 +5,24 @@ from typing import List, Optional
 
 from gi.repository import Gtk, Gio
 
+import files
+from checks import ErrorType, DeviceErrorChecker
 from device.device import DeviceAddress
-from gui import files
-from gui.checks import ErrorType, DeviceErrorChecker
 from gui.device_panel import DevicePanel
-from gui.observable import Observable
+from gui.gtk_util import glib_wait_future
 from gui.stub_panel import StubPanel, State
-from gui.util import glib_wait_future
 from gui.widgets.status_label import create_status_label
-from gui.worker import Worker, Profile
-
-TITLE = 'Muon system voltage controller'
+from gui.worker import Worker
+from observable import Observable
+from profile import Profile
+from settings import gui_settings
 
 RESPONSE_RECONNECT = 1
 RESPONSE_RECONNECT_WITH_PROFILE = 2
 RESPONSE_RECONNECT_WITHOUT_PROFILE = 3
 RESPONSE_DISCONNECT = 4
 
-LOGGER = logging.getLogger('MainWindow')
+LOGGER = logging.getLogger('gui.main_window')
 
 
 def _new_action(name, on_activate):
@@ -56,7 +56,7 @@ def show_simple_reconnect_dialog(parent, address: DeviceAddress, msg: str) -> in
         ),
         message_format=f'{address}\nConnection failure. Reconnect?'
     )
-    dlg.set_title(TITLE)
+    dlg.set_title(gui_settings.window_title)
     dlg.format_secondary_text(f'{msg}\nDo you want to try again?')
     response = dlg.run()
     dlg.destroy()
@@ -74,7 +74,7 @@ def show_reconnect_dialog(parent, address: DeviceAddress, msg: str) -> int:
         ),
         message_format=f'{address}\nConnection failure. Reconnect?'
     )
-    dlg.set_title(TITLE)
+    dlg.set_title(gui_settings.window_title)
     dlg.format_secondary_text(f'{msg}\n'
                               f'You have several options:\n'
                               f'\t1) Reconnect and set parameters from current device profile\n'
@@ -155,7 +155,7 @@ class MainWindow(Gtk.ApplicationWindow):
 
     def __init__(self, devices: List[DeviceAddress], profile: Optional[Profile]):
         super().__init__()
-        self.set_title(TITLE)
+        self.set_title(gui_settings.window_title)
         self.set_border_width(0)
         self.set_default_size(700, 480)
 

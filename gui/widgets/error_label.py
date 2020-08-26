@@ -1,6 +1,6 @@
 from gi.repository import Gtk, GLib
 
-from gui.observable import Observable
+from observable import Observable
 
 
 def create_error_label(error_text: Observable[str]):

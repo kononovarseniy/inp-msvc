@@ -5,15 +5,13 @@ import gi
 
 gi.require_version("Gtk", "3.0")
 
-logging.basicConfig(level=logging.NOTSET)
+# Read configuration, ignore unused import
+# noinspection PyUnresolvedReferences
+import config
 
-from gui import settings
-from default_values import controller_defaults, cell_defaults
 from gui.main import main
 
 LOGGER = logging.getLogger()
-
-settings.defaults = settings.DefaultValues(controller_defaults, cell_defaults)
 
 if __name__ == '__main__':
     try:

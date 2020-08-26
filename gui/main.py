@@ -2,7 +2,7 @@ import logging
 
 from gi.repository import Gtk
 
-from gui import files
+import files
 from gui.main_window import MainWindow
 
 LOGGER = logging.getLogger('gui')
