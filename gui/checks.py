@@ -66,6 +66,10 @@ def check_parameter(state: DeviceParameter) -> ErrorType:
         return ErrorType.ok
 
 
+def good_if_output_enabled(state: CellState) -> ErrorType:
+    return ErrorType.good if state.enabled.actual else ErrorType.ok
+
+
 def check_cell(state: CellState) -> ErrorType:
     return max(
         check_actual_voltage_set(state),
@@ -77,7 +81,7 @@ def check_cell(state: CellState) -> ErrorType:
         check_parameter(state.enabled),
         check_parameter(state.ramp_up_speed),
         check_parameter(state.ramp_down_speed),
-        ErrorType.good if state.enabled.actual else ErrorType.ok
+        good_if_output_enabled(state)
     )
 
 

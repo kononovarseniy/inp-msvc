@@ -12,6 +12,7 @@ from gui.device_panel import DevicePanel
 from gui.observable import Observable
 from gui.stub_panel import StubPanel, State
 from gui.util import glib_wait_future
+from gui.widgets.status_label import create_status_label
 from gui.worker import Worker, Profile
 
 TITLE = 'Muon system voltage controller'
@@ -114,10 +115,9 @@ class WorkerWrapper:
     def __init__(self, address: DeviceAddress):
         self._address = address
         self._worker: Optional[Worker] = None
+        self._error = Observable(ErrorType.ok)
         # noinspection PyCallingNonCallable
-        self._error = Observable[ErrorType](ErrorType.ok)
-        # noinspection PyCallingNonCallable
-        self._profile = Observable[Profile](None)
+        self._profile = Observable[Optional[Profile]](None)
         self._profile.add_observer(lambda _: self._load_profile())
 
     def _load_profile(self):
@@ -172,7 +172,7 @@ class MainWindow(Gtk.ApplicationWindow):
 
             tab_body = Gtk.Box()
             tab_body.pack_start(StubPanel(dev, State.CONNECTING, wrapper.profile), True, True, 0)
-            self.notebook.append_page(tab_body, Gtk.Label(label=dev.name))
+            self.notebook.append_page(tab_body, create_status_label(dev.name, wrapper.error))
 
             glib_wait_future(Worker.create(dev), self.on_worker_created, i)
 
@@ -240,6 +240,7 @@ class MainWindow(Gtk.ApplicationWindow):
         self.set_nth_page(index, DevicePanel(worker, wrapper.profile))
 
     def on_connection_error(self, _: Worker, msg: str, *, index: int):
+        self.wrappers[index].error.value = ErrorType.critical
         response = show_reconnect_dialog(self, self.wrappers[index].address, msg)
 
         if response == RESPONSE_RECONNECT_WITH_PROFILE:

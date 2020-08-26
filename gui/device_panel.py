@@ -39,8 +39,8 @@ def make_format_data_func(fmt: Callable[[CellState], str], check: Callable[[Cell
     return lambda cell, state: render_cell(cell, fmt(state), check(state), False)
 
 
-def cell_index_data_func(cell: Gtk.CellRenderer, state: CellState):
-    render_cell(cell, state.cell_index, ErrorType.good if state.enabled.actual else ErrorType.ok, False)
+def format_cell_index(state: CellState) -> str:
+    return str(state.cell_index)
 
 
 def cell_enabled_data_func(cell: Gtk.CellRendererToggle, state: CellState):
@@ -227,7 +227,8 @@ class DevicePanel(Gtk.Box):
         adapter = TreeModelAdapter()
         tree_view = Gtk.TreeView(model=adapter.model)
 
-        adapter.append_text_column(tree_view, '#', cell_index_data_func)
+        adapter.append_text_column(tree_view, '#',
+                                   make_format_data_func(format_cell_index, checks.good_if_output_enabled))
 
         adapter.append_toggle_column(tree_view, 'En.\n(des)', cell_enabled_data_func,
                                      self._make_on_changed(Worker.set_enabled))
