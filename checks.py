@@ -99,6 +99,7 @@ class DeviceErrorChecker:
         self._output = output
         worker.connect(Worker.CELL_UPDATED, lambda w, _: self._on_updated(w))
         worker.connect(Worker.CONTROLLER_UPDATED, lambda w: self._on_updated(w))
+        self._on_updated(worker)
 
     def _on_updated(self, worker: Worker):
         res = max(map(check_cell, worker.iter_cells()))

@@ -20,6 +20,7 @@ def main(args):
 
     win = MainWindow(devices)
     win.connect('destroy', Gtk.main_quit)
-    win.set_profile(args.profile, None)
+    if args.profile is not None:
+        win.set_profile(args.profile, None)
     win.show_all()
     Gtk.main()
