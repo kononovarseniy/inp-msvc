@@ -9,6 +9,8 @@ from typing import Dict
 
 from device.registers import ControllerRegister, CellRegister
 
+program_version = '1.0.0'
+
 
 @dataclass
 class GuiSettings:

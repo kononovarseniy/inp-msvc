@@ -15,7 +15,7 @@ from gui.widgets.status_label import create_status_label
 from gui.worker import Worker
 from observable import Observable
 from profile import Profile
-from settings import gui_settings
+from settings import gui_settings, program_version
 
 RESPONSE_RECONNECT = 1
 RESPONSE_RECONNECT_WITH_PROFILE = 2
@@ -124,6 +124,21 @@ def show_profile_chooser_dialog(parent, title: str) -> Optional[str]:
     return file
 
 
+def show_about_dialog() -> None:
+    dlg = Gtk.MessageDialog(
+        type=Gtk.MessageType.INFO,
+        buttons=(Gtk.STOCK_OK, Gtk.ResponseType.OK)
+    )
+    dlg.set_title(f'About {gui_settings.window_title}')
+    dlg.set_markup(f'<span size="x-large" weight="bold">{gui_settings.window_title}</span>')
+    dlg.format_secondary_markup(
+        f'<b>Version:</b> {program_version}\n\n'
+        f'<b>Author:</b> Arseniy Kononov\n'
+        f'<b>Email:</b> kononovarseniy@gmail.com')
+    dlg.connect('response', lambda _1, _2: dlg.destroy())
+    dlg.show()
+
+
 class WorkerWrapper:
     def __init__(self, address: DeviceAddress):
         self._address = address
@@ -199,6 +214,7 @@ class MainWindow(Gtk.ApplicationWindow):
 
         self.add_action(_new_action('file.load_all', self.on_load_all))
         self.add_action(_new_action('file.load_one', self.on_load_one))
+        self.add_action(_new_action('help.about', lambda _1, _2: show_about_dialog()))
 
     def on_worker_created(self, f: 'Future[Worker]', index: int):
         wrapper = self.wrappers[index]
