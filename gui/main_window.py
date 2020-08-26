@@ -46,6 +46,19 @@ def _create_menubar():
     return Gtk.MenuBar.new_from_model(menu_model)
 
 
+def show_message_dialog(parent, primary: str, secondary: str, message_type=Gtk.MessageType.ERROR) -> None:
+    dlg = Gtk.MessageDialog(
+        parent=parent,
+        type=message_type,
+        buttons=(Gtk.STOCK_OK, Gtk.ResponseType.OK),
+        message_format=primary
+    )
+    dlg.set_title(gui_settings.window_title)
+    dlg.format_secondary_text(secondary)
+    dlg.run()
+    dlg.destroy()
+
+
 def show_simple_reconnect_dialog(parent, address: DeviceAddress, msg: str) -> int:
     dlg = Gtk.MessageDialog(
         parent=parent,
@@ -153,7 +166,7 @@ class WorkerWrapper:
 
 class MainWindow(Gtk.ApplicationWindow):
 
-    def __init__(self, devices: List[DeviceAddress], profile: Optional[Profile]):
+    def __init__(self, devices: List[DeviceAddress]):
         super().__init__()
         self.set_title(gui_settings.window_title)
         self.set_border_width(0)
@@ -167,7 +180,6 @@ class MainWindow(Gtk.ApplicationWindow):
 
         for i, dev in enumerate(devices):
             wrapper = WorkerWrapper(dev)
-            wrapper.profile.value = profile
             self.wrappers.append(wrapper)
 
             tab_body = Gtk.Box()
@@ -253,28 +265,70 @@ class MainWindow(Gtk.ApplicationWindow):
     def read_profile(self, title: str):
         profile = show_profile_chooser_dialog(self, title)
         if profile is None:
-            LOGGER.info('Profile is not loaded')
+            LOGGER.info('Profile is not loaded (cancelled by user)')
             return None
 
         try:
             return files.read_profile(profile)
         except IOError as e:
-            LOGGER.error(f'Cannot read profile: {e}')
+            msg = f'Cannot read profile: {e}'
+            show_message_dialog(self, 'Unable to load profile', msg)
+            LOGGER.error(msg)
         except files.FormatError as e:
-            LOGGER.error(f'Invalid profile: {e.message}')
+            msg = f'Invalid profile: {e.message}'
+            show_message_dialog(self, 'Unable to load profile', msg)
+            LOGGER.error(msg)
+
+    def set_profile(self, profile_path: str, index: Optional[int]) -> None:
+        try:
+            profile = files.read_profile(profile_path)
+        except IOError as e:
+            msg = f'Cannot read profile: {e}'
+            show_message_dialog(self, 'Unable to load profile', msg)
+            LOGGER.error(msg)
+            return
+        except files.FormatError as e:
+            msg = f'Invalid profile: {e.message}'
+            show_message_dialog(self, 'Unable to load profile', msg)
+            LOGGER.error(msg)
+            return
+
+        if index is None:
+            if profile is not None:
+                names1 = set(w.address.name for w in self.wrappers)
+                names2 = set(profile.device_names())
+
+                diff = names1 - names2
+                if len(diff) > 0:
+                    msg = f'The profile does not contain parameters for some devices: {", ".join(diff)}'
+                    LOGGER.warning(msg)
+                    show_message_dialog(self, 'Warning: Possibly wrong profile', msg, Gtk.MessageType.WARNING)
+
+            for w in self.wrappers:
+                w.profile.value = profile
+        else:
+            if profile is not None:
+                name = self.wrappers[index].address.name
+                if name not in profile.device_names():
+                    msg = f'The profile does not contain parameters for device {name}'
+                    LOGGER.warning(msg)
+                    show_message_dialog(self, 'Warning: Possibly wrong profile', msg, Gtk.MessageType.WARNING)
+
+            self.wrappers[index].profile.value = profile
 
     def on_load_all(self, _action, _value):
-        profile = self.read_profile("Chose profile for all devices...")
-        if profile is None:
-            return
+        path = show_profile_chooser_dialog(self, "Chose profile for all devices...")
+        if path is None:
+            LOGGER.info('Profile is not loaded (cancelled by user)')
+            return None
 
-        for w in self.wrappers:
-            w.profile.value = profile
+        self.set_profile(path, None)
 
     def on_load_one(self, _action, _value):
-        profile = self.read_profile("Chose profile for selected device...")
-        if profile is None:
-            return
+        path = show_profile_chooser_dialog(self, "Chose profile for selected device...")
+        if path is None:
+            LOGGER.info('Profile is not loaded (cancelled by user)')
+            return None
 
         page = self.notebook.get_current_page()
-        self.wrappers[page].profile.value = profile
+        self.set_profile(path, page)

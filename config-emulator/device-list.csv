@@ -1,3 +1,4 @@
 name, address,   port
 dev1, localhost, 8080
 dev2, 127.0.0.1, 8081
+dev3, 127.0.0.1, 8082
