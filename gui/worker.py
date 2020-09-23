@@ -1,15 +1,16 @@
 import logging
 from concurrent.futures import Future, CancelledError
 from concurrent.futures.thread import ThreadPoolExecutor
+from enum import Enum
 from typing import Tuple, List, Callable, TypeVar, Optional
 
 from gi.repository import GObject, GLib
 
-from settings import defaults
 from device.device import DeviceAddress, Device, Cell, Controller
 from device.registers import TemperatureSensor
 from gui.gtk_util import glib_wait_future
 from profile import DeviceProfile
+from settings import defaults
 from state import DeviceParameter, \
     CellState, CellUpdates, CellSettings, \
     read_cell_state, read_cell_updates, write_cell_settings, update_cell_state, \
@@ -26,6 +27,14 @@ SOCKET_TIMEOUT = 10
 LOGGER = logging.getLogger('gui.worker')
 
 
+class Stage(Enum):
+    CONNECTING = 0,
+    WRITING_DEFAULTS = 1,
+    READING_STATE = 2,
+    CONNECTED = 3,
+    DISCONNECTED = 4
+
+
 def _read_device_updates(device: Device) -> Tuple[ControllerUpdates, List[CellUpdates]]:
     return read_controller_updates(device.controller), list(map(read_cell_updates, device.cells))
 
@@ -34,13 +43,16 @@ def _read_device_state(device: Device) -> Tuple[ControllerState, List[CellState]
     return read_controller_state(device.controller), list(map(read_cell_state, device.cells))
 
 
-def _connect(executor: ThreadPoolExecutor, address: DeviceAddress) -> 'Worker':
+def _connect(executor: ThreadPoolExecutor, address: DeviceAddress,
+             on_stage_changed: Callable[[Stage], None]) -> 'Worker':
     try:
         # Connect
         LOGGER.debug(f'Connecting to {address}')
+        on_stage_changed(Stage.CONNECTING)
         dev = Device(address, CHANNEL_COUNT, SOCKET_TIMEOUT)
         # Write defaults
         LOGGER.debug(f'Writing defaults to {address}')
+        on_stage_changed(Stage.WRITING_DEFAULTS)
         if defaults is None:
             LOGGER.warning(f'No default values')
         else:
@@ -51,13 +63,16 @@ def _connect(executor: ThreadPoolExecutor, address: DeviceAddress) -> 'Worker':
                     cell.write(r, v)
         # Read state
         LOGGER.debug(f'Reading state from {address}')
+        on_stage_changed(Stage.READING_STATE)
         ctl, cells = _read_device_state(dev)
     except (EOFError, OSError) as e:
         msg = f'Failed to connect to {address}: {e}'
         LOGGER.error(msg)
+        on_stage_changed(Stage.DISCONNECTED)
         raise ConnectionError(msg)
 
     LOGGER.info(f'Connected to {address}')
+    on_stage_changed(Stage.CONNECTED)
     return Worker(executor, dev, ctl, cells)
 
 
@@ -106,9 +121,9 @@ class Worker(GObject.Object):
         GLib.timeout_add(10000, self._on_timer)
 
     @staticmethod
-    def create(address: DeviceAddress) -> 'Future[Worker]':
+    def create(address: DeviceAddress, on_stage_changed: Callable[[Stage], None]) -> 'Future[Worker]':
         executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix=str(address))
-        return executor.submit(_connect, executor, address)
+        return executor.submit(_connect, executor, address, on_stage_changed)
 
     def close(self) -> 'Future[None]':
         if self._executor is None:

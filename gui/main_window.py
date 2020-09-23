@@ -10,9 +10,9 @@ from checks import ErrorType, DeviceErrorChecker
 from device.device import DeviceAddress
 from gui.device_panel import DevicePanel
 from gui.gtk_util import glib_wait_future
-from gui.stub_panel import StubPanel, State
+from gui.stub_panel import StubPanel
 from gui.widgets.status_label import create_status_label
-from gui.worker import Worker
+from gui.worker import Worker, Stage
 from observable import Observable
 from profile import Profile
 from settings import gui_settings, program_version
@@ -199,10 +199,11 @@ class MainWindow(Gtk.ApplicationWindow):
             self.wrappers.append(wrapper)
 
             tab_body = Gtk.Box()
-            tab_body.pack_start(StubPanel(dev, State.CONNECTING, wrapper.profile), True, True, 0)
+            stub_panel = StubPanel(dev, Stage.CONNECTING, wrapper.profile)
+            tab_body.pack_start(stub_panel, True, True, 0)
             self.notebook.append_page(tab_body, create_status_label(dev.name, wrapper.error))
 
-            glib_wait_future(Worker.create(dev), self.on_worker_created, i)
+            glib_wait_future(Worker.create(dev, stub_panel.schedule_stage_change), self.on_worker_created, i)
 
         # a grid to attach the widgets
         grid = Gtk.Grid()
@@ -259,18 +260,18 @@ class MainWindow(Gtk.ApplicationWindow):
             wrapper.profile.value = None
 
         wrapper.worker = None
-        panel = StubPanel(wrapper.address, State.CONNECTING, wrapper.profile)
-        self.set_nth_page(index, panel)
-        glib_wait_future(Worker.create(wrapper.address), self.on_worker_created, index)
+        stub_panel = StubPanel(wrapper.address, Stage.CONNECTING, wrapper.profile)
+        self.set_nth_page(index, stub_panel)
+        glib_wait_future(Worker.create(wrapper.address, stub_panel.schedule_stage_change), self.on_worker_created, index)
 
     def disconnect_device(self, index: int):
         wrapper = self.wrappers[index]
         LOGGER.info(f'Disconnecting from {wrapper.address}')
 
         wrapper.worker = None
-        panel = StubPanel(wrapper.address, State.DISCONNECTED, wrapper.profile)
-        panel.connect(StubPanel.RECONNECT_CLICKED, lambda _, use_profile: self.reconnect_device(use_profile, index))
-        self.set_nth_page(index, panel)
+        stub_panel = StubPanel(wrapper.address, Stage.DISCONNECTED, wrapper.profile)
+        stub_panel.connect(StubPanel.RECONNECT_CLICKED, lambda _, use_profile: self.reconnect_device(use_profile, index))
+        self.set_nth_page(index, stub_panel)
 
     def set_nth_page(self, index, panel):
         tab = self.notebook.get_nth_page(index)

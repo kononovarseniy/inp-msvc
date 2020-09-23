@@ -1,30 +1,25 @@
 import logging
-from enum import Enum
 from typing import Optional
 
-from gi.repository import Gtk, Gdk, GObject
+from gi.repository import Gtk, Gdk, GObject, GLib
 
 from device.device import DeviceAddress
-from observable import Observable
 from gui.widgets.profile_label import create_profile_label
+from gui.worker import Stage
+from observable import Observable
 from profile import Profile
 
 LOGGER = logging.getLogger('stub-panel')
 
 
-class State(Enum):
-    CONNECTING = 1
-    DISCONNECTED = 2
-
-
 class StubPanel(Gtk.Grid):
     RECONNECT_CLICKED = 'reconnect-clicked'
 
-    def __init__(self, address: DeviceAddress, state: State, profile: Observable[Optional[Profile]]):
+    def __init__(self, address: DeviceAddress, stage: Stage, profile: Observable[Optional[Profile]]):
         super().__init__()
 
         self._address = address
-        self._state = state
+        self._stage = stage
 
         self.override_background_color(Gtk.StateType.NORMAL, Gdk.RGBA.from_color(Gdk.color_parse('white')))
 
@@ -56,13 +51,16 @@ class StubPanel(Gtk.Grid):
 
         self._update()
 
-    @property
-    def state(self):
-        return self._state
+    def schedule_stage_change(self, new_stage: Stage):
+        GLib.idle_add(StubPanel.stage.__set__, self, new_stage)
 
-    @state.setter
-    def state(self, state: State):
-        self._state = state
+    @property
+    def stage(self):
+        return self._stage
+
+    @stage.setter
+    def stage(self, state: Stage):
+        self._stage = state
         self._update()
 
     @property
@@ -70,11 +68,17 @@ class StubPanel(Gtk.Grid):
         return self._address
 
     def _update(self):
-        if self._state == State.CONNECTING:
+        self._connect_with_profile_button.hide()
+        self._connect_without_profile_button.hide()
+        if self._stage == Stage.CONNECTING:
             self._status_label.set_markup(f'Connecting to <b>{self._address}</b>')
-            self._connect_with_profile_button.hide()
-            self._connect_without_profile_button.hide()
-        elif self._state == State.DISCONNECTED:
+        elif self._stage == Stage.WRITING_DEFAULTS:
+            self._status_label.set_markup(f'Writing defaults to <b>{self._address}</b>')
+        elif self._stage == Stage.READING_STATE:
+            self._status_label.set_markup(f'Reading values from <b>{self._address}</b>')
+        elif self._stage == Stage.CONNECTED:
+            self._status_label.set_markup(f'Connected to <b>{self._address}</b>')
+        elif self._stage == Stage.DISCONNECTED:
             self._status_label.set_markup(f'Connection to <b>{self.address}</b> failed')
             self._connect_with_profile_button.show()
             self._connect_without_profile_button.show()
