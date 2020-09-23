@@ -234,8 +234,7 @@ class Worker(GObject.Object):
 
     def _start_update(self):
         LOGGER.debug(f'Start reading values. Device: {self.get_device_address()}')
-        glib_wait_future(self._executor.submit(_read_device_updates, self._device),
-                         self._complete_update)
+        self._submit_work(_read_device_updates, (self._device,), self._complete_update, ())
 
     def _complete_update(self, f: 'Future[Tuple[ControllerUpdates, List[CellUpdates]]]'):
         if not self._handle_result(f):
@@ -337,6 +336,7 @@ class Worker(GObject.Object):
         pass
 
     def _on_timer(self):
+        LOGGER.debug(f'Timer expired for {self}')
         if self._shutdown:
             return False
         self._start_update()

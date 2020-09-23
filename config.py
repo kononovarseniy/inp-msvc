@@ -9,7 +9,12 @@ from device.registers import CellRegister as Cell
 from device.registers import ControllerRegister as Ctl
 from settings import check_settings, gui_settings, defaults
 
-logging.basicConfig(level=logging.NOTSET)
+logging.basicConfig(
+    level=logging.NOTSET,
+    # filename='log.log',
+    format='%(asctime)s:%(levelname)s:%(module)s: %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
 
 check_settings.max_voltage_difference = 1
 check_settings.max_voltage_when_off = 10
