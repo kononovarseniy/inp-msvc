@@ -4,18 +4,25 @@ This file contains program configuration.
 Users are free to edit this file.
 """
 import logging
+import os
 import sys
 
 from device.registers import CellRegister as Cell
 from device.registers import ControllerRegister as Ctl
-from settings import check_settings, gui_settings, defaults
+from settings import check_settings, gui_settings, defaults, program_settings
 
 """
 Logging configuration
 """
 
+dirname = 'log'
+if not os.path.exists(dirname):
+    os.makedirs(dirname)
+
+program_settings.data_log_file = 'log/values.csv'
+
 # Configure logging to a file
-file_handler = logging.FileHandler('log.log')
+file_handler = logging.FileHandler('log/log.log')
 # stdout_handler.setLevel(logging.NOTSET)
 
 # Configure logging to stdout
@@ -24,7 +31,7 @@ stdout_handler = logging.StreamHandler(sys.stdout)
 
 logging.basicConfig(
     level=logging.NOTSET,
-    format='%(asctime)s:%(levelname)s:%(module)s: %(message)s',
+    format='%(asctime)s:%(levelname)s:%(name)s: %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S',
     handlers=(file_handler, stdout_handler)
 )

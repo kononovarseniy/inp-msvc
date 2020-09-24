@@ -13,6 +13,14 @@ program_version = '1.0.0'
 
 
 @dataclass
+class ProgramSettings:
+    data_log_file: str
+
+
+program_settings = ProgramSettings('values.csv')
+
+
+@dataclass
 class GuiSettings:
     window_title: str
 

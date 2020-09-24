@@ -7,6 +7,7 @@ from gi.repository import Gtk, Gio
 
 import files
 from checks import ErrorType, DeviceErrorChecker
+from data_logger import DataLogger
 from device.device import DeviceAddress
 from gui.device_panel import DevicePanel
 from gui.gtk_util import glib_wait_future
@@ -181,7 +182,7 @@ class WorkerWrapper:
 
 class MainWindow(Gtk.ApplicationWindow):
 
-    def __init__(self, devices: List[DeviceAddress]):
+    def __init__(self, devices: List[DeviceAddress], data_logger: DataLogger):
         super().__init__()
         self.set_title(gui_settings.window_title)
         self.set_border_width(0)
@@ -192,6 +193,8 @@ class MainWindow(Gtk.ApplicationWindow):
         self.notebook = Gtk.Notebook()
         self.notebook.set_hexpand(True)
         self.notebook.set_vexpand(True)
+
+        self.data_logger = data_logger
 
         for i, dev in enumerate(devices):
             wrapper = WorkerWrapper(dev)
@@ -234,6 +237,7 @@ class MainWindow(Gtk.ApplicationWindow):
         LOGGER.info(f'Connected to {worker.get_device_address()}')
         wrapper.worker = worker
         worker.connect(Worker.CONNECTION_ERROR, partial(self.on_connection_error, index=index))
+        self.data_logger.add_worker(worker)
 
         DeviceErrorChecker(worker, output=wrapper.error)  # Connects itself to worker signals
 

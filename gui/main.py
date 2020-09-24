@@ -8,7 +8,7 @@ from gui.main_window import MainWindow
 LOGGER = logging.getLogger('gui')
 
 
-def main(args):
+def main(args, data_logger):
     devices = []
     try:
         if args.devices is not None:
@@ -18,7 +18,7 @@ def main(args):
     except ValueError:
         LOGGER.error(f'Failed to parse device list')
 
-    win = MainWindow(devices)
+    win = MainWindow(devices, data_logger)
     win.connect('destroy', Gtk.main_quit)
     if args.profile is not None:
         win.set_profile(args.profile, None)
