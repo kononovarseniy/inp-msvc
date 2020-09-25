@@ -30,10 +30,10 @@ def get_row_being_edited(tree_view: Gtk.TreeView) -> Optional[Gtk.TreePath]:
             return cur.path
 
 
-class GWrapper(GObject.GObject, Generic[T]):
+class GWrapper(GObject.GObject):
     """Wraps python object into GObject"""
 
-    def __init__(self, value: T):
+    def __init__(self, value):
         GObject.GObject.__init__(self)
         self.value = value
 
