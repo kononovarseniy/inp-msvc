@@ -1,3 +1,5 @@
+"""Application entry point. It is responsible for setting up the environment and launching the GUI."""
+
 import argparse
 import logging
 import sys

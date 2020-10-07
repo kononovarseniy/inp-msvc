@@ -1,3 +1,8 @@
+"""
+This file contains class definitions used to store the current state of devices.
+The functions defined here serve to transform the various representations of these states,
+and to read and write them to the device.
+"""
 from dataclasses import dataclass
 from typing import Tuple, Generic, TypeVar
 
@@ -8,6 +13,18 @@ T = TypeVar('T')
 
 
 class DeviceParameter(Generic[T]):
+    """
+    This class stores state of single mutable device parameter.
+    It contains three fields:
+
+    - desired value -- the value that is set from user interface,
+    - actual value -- the value read from device,
+    - waiting counter -- number of pending writes.
+
+    If waiting counter is 0 the update_value() sets the desired value.
+    This way, if there are no pending writes, the desired value remains in sync with the actual value.
+    """
+
     def __init__(self, desired: T, actual: T = None, waiting: int = 0):
         self.desired = desired
         self.actual = actual if actual is not None else desired
@@ -31,6 +48,8 @@ class DeviceParameter(Generic[T]):
 
 @dataclass
 class _CellParameters:
+    """Mutable cell parameters"""
+
     enabled: DeviceParameter[bool]
     """Indicates whether the output voltage is on"""
     voltage_set: DeviceParameter[float]
@@ -45,6 +64,8 @@ class _CellParameters:
 
 @dataclass
 class _CellParametersPlain:
+    """Same mutable parameters as in _CellParameters, but without their desired values"""
+
     enabled: bool
     """Indicates whether the output voltage is on"""
     voltage_set: float
@@ -59,6 +80,8 @@ class _CellParametersPlain:
 
 @dataclass
 class _CellReadonly:
+    """Readonly cell parameters"""
+
     voltage_measured: float
     """Measured output voltage in volts"""
     current_measured: float
@@ -69,6 +92,8 @@ class _CellReadonly:
 
 @dataclass
 class _CellConstants:
+    """Constant cell parameters, these parameters do not change during device operation"""
+
     voltage_range: Tuple[float, float]
     """Allowed voltage range"""
     current_limit_range: Tuple[float, float]
@@ -81,6 +106,8 @@ class _CellConstants:
 
 @dataclass
 class _CellAuxiliary:
+    """Parameters not presented in the cell, but used by the program"""
+
     cell_index: int
     """Cell index, numbering from one"""
     auto_enable: bool
@@ -100,6 +127,7 @@ class CellUpdates(_CellReadonly, _CellParametersPlain):  # Reverse order
 @dataclass
 class CellSettings(_CellParametersPlain):
     """Contains values of writable cell parameters"""
+
     auto_enable: bool
     """If True the cell can be enabled automatically"""
 
@@ -182,6 +210,8 @@ def update_actual_state(state: CellState, settings: CellSettings) -> None:
 
 @dataclass
 class _ControllerParameters:
+    """Mutable controller parameters"""
+
     base_voltage_enabled: DeviceParameter[bool]
     fan_off_temp: DeviceParameter[int]
     fan_on_temp: DeviceParameter[int]
@@ -191,6 +221,8 @@ class _ControllerParameters:
 
 @dataclass
 class _ControllerParametersPlain:
+    """Same mutable parameters as in _ControllerParameters, but without their desired values"""
+
     base_voltage_enabled: bool
     fan_off_temp: int
     fan_on_temp: int
@@ -200,6 +232,8 @@ class _ControllerParametersPlain:
 
 @dataclass
 class _ControllerReadonly:
+    """Readonly controller parameters"""
+
     status: ControllerSR
     processor_temp: int
     board_temp: int
@@ -210,17 +244,17 @@ class _ControllerReadonly:
 
 @dataclass
 class ControllerState(_ControllerReadonly, _ControllerParameters):
-    pass
+    """Cell state includes constant cell parameters, cell state and changeable parameters with their desired values"""
 
 
 @dataclass
 class ControllerSettings(_ControllerParametersPlain):
-    pass
+    """Contains values of writable controller parameters"""
 
 
 @dataclass
 class ControllerUpdates(_ControllerReadonly, _ControllerParametersPlain):
-    pass
+    """Contains values that represent controller status"""
 
 
 def read_controller_state(ctl: Controller) -> ControllerState:

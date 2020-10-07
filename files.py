@@ -1,3 +1,5 @@
+"""Contains functions for reading files used by the program."""
+
 import csv
 import logging
 

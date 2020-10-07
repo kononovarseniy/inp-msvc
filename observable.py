@@ -6,6 +6,8 @@ Observer = Callable[['Observable[T]'], None]
 
 
 class Observable(Generic[T]):
+    """An implementation of an "observable" pattern used by GUI widgets to subscribe to variable changes."""
+
     _value: T
     _observers: List[Observer]
 

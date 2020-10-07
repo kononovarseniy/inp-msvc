@@ -1,3 +1,5 @@
+"""Implementation of data logger which is responsible for recording history of device parameters."""
+
 import csv
 import logging
 from concurrent.futures.thread import ThreadPoolExecutor
