@@ -147,16 +147,6 @@ class WorkerWrapper:
         self._error = Observable(ErrorType.ok)
         # noinspection PyCallingNonCallable
         self._profile = Observable[Optional[Profile]](None)
-        self._profile.add_observer(lambda _: self._load_profile())
-
-    def _load_profile(self):
-        try:
-            if self._worker is not None and self.profile.value is not None:
-                self._worker.load_device_profile(self.profile.value[self.address])
-        except IndexError:
-            LOGGER.error(f'Unable to load profile: the voltage cell with specified index does not exist')
-        except ValueError as e:
-            LOGGER.error(f'Unable to load profile: {self._worker.get_device_address()} {e}')
 
     @property
     def address(self):
@@ -169,7 +159,6 @@ class WorkerWrapper:
     @worker.setter
     def worker(self, value: Optional[Worker]):
         self._worker = value
-        self._load_profile()
 
     @property
     def error(self) -> Observable[ErrorType]:
@@ -236,6 +225,7 @@ class MainWindow(Gtk.ApplicationWindow):
 
         LOGGER.info(f'Connected to {worker.get_device_address()}')
         wrapper.worker = worker
+        self._set_profile_for_wrapper(wrapper, wrapper.profile.value)
         worker.connect(Worker.CONNECTION_ERROR, partial(self.on_connection_error, index=index))
         self.data_logger.add_worker(worker)
 
@@ -266,7 +256,8 @@ class MainWindow(Gtk.ApplicationWindow):
         wrapper.worker = None
         stub_panel = StubPanel(wrapper.address, Stage.CONNECTING, wrapper.profile)
         self.set_nth_page(index, stub_panel)
-        glib_wait_future(Worker.create(wrapper.address, stub_panel.schedule_stage_change), self.on_worker_created, index)
+        glib_wait_future(Worker.create(wrapper.address, stub_panel.schedule_stage_change), self.on_worker_created,
+                         index)
 
     def disconnect_device(self, index: int):
         wrapper = self.wrappers[index]
@@ -274,7 +265,8 @@ class MainWindow(Gtk.ApplicationWindow):
 
         wrapper.worker = None
         stub_panel = StubPanel(wrapper.address, Stage.DISCONNECTED, wrapper.profile)
-        stub_panel.connect(StubPanel.RECONNECT_CLICKED, lambda _, use_profile: self.reconnect_device(use_profile, index))
+        stub_panel.connect(StubPanel.RECONNECT_CLICKED,
+                           lambda _, use_profile: self.reconnect_device(use_profile, index))
         self.set_nth_page(index, stub_panel)
 
     def set_nth_page(self, index, panel):
@@ -300,6 +292,20 @@ class MainWindow(Gtk.ApplicationWindow):
             msg = f'Invalid profile: {e.message}'
             show_message_dialog(self, 'Unable to load profile', msg)
             LOGGER.error(msg)
+
+    def _set_profile_for_wrapper(self, wrapper: WorkerWrapper, profile: Profile):
+        wrapper.profile.value = profile
+        worker = wrapper.worker
+        if profile is None or worker is None:
+            return
+        try:
+            worker.load_device_profile(profile[wrapper.address])
+        except IndexError:
+            show_message_dialog(self, 'Unable to load profile', 'The voltage cell with specified index does not exist')
+            LOGGER.error(f'Unable to load profile: the voltage cell with specified index does not exist')
+        except ValueError as e:
+            show_message_dialog(self, f'Unable to load profile: {worker.get_device_address()}', str(e))
+            LOGGER.error(f'Unable to load profile: {worker.get_device_address()} {e}')
 
     def set_profile(self, profile_path: str, index: Optional[int]) -> None:
         try:
@@ -327,7 +333,7 @@ class MainWindow(Gtk.ApplicationWindow):
                     show_message_dialog(self, 'Warning: Possibly wrong profile', msg, Gtk.MessageType.WARNING)
 
             for w in self.wrappers:
-                w.profile.value = profile
+                self._set_profile_for_wrapper(w, profile)
         else:
             if profile is not None:
                 name = self.wrappers[index].address.name
@@ -336,7 +342,7 @@ class MainWindow(Gtk.ApplicationWindow):
                     LOGGER.warning(msg)
                     show_message_dialog(self, 'Warning: Possibly wrong profile', msg, Gtk.MessageType.WARNING)
 
-            self.wrappers[index].profile.value = profile
+            self._set_profile_for_wrapper(self.wrappers[index], profile)
 
     def on_load_all(self, _action, _value):
         path = show_profile_chooser_dialog(self, "Chose profile for all devices...")
