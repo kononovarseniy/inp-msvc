@@ -1,5 +1,6 @@
 log/
-
+log.log
+/config/
 .venv/
 __pycache__/
 *.py[cod]
