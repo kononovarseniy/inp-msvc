@@ -1,4 +1,4 @@
-dictionaries
-py-flags
+dictionaries==0.0.2
+py-flags==1.1.4
 PyGObject
 dataclasses
