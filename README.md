@@ -34,6 +34,12 @@ python main.py --profile voltage-profile.csv device-list.csv
 ```
 Sample configuration files are located in the config-emulator and config-real directories.
 Also you may want to alter some parameters in ```config.py```.
+For example, to change the maximum allowed difference between set and measured voltage,
+you can change these lines in the ```config.py```:
+```py
+check_settings.max_voltage_difference = 10
+check_settings.max_voltage_when_off = 100000
+```
 
 ## Project structure
 - ```checks.py``` -- device state checking.
