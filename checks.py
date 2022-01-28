@@ -1,4 +1,5 @@
 from enum import IntEnum
+from typing import Tuple
 
 from settings import check_settings
 from observable import Observable
@@ -14,7 +15,7 @@ class ErrorType(IntEnum):
     critical = 4
 
 
-def is_in_range(v: float, r: (float, float)) -> bool:
+def is_in_range(v: float, r: Tuple[float, float]) -> bool:
     return r[0] <= v <= r[1]
 
 

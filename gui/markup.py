@@ -36,6 +36,8 @@ def make_markup(error_type: ErrorType, text: Any) -> str:
 
     if error_type == ErrorType.critical:
         return critical_markup(text)
+    
+    assert False
 
 
 def render_cell(cell: Gtk.CellRenderer, text: Any, error_type: ErrorType, editable: bool):

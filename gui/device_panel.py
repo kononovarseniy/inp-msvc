@@ -1,5 +1,5 @@
 import logging
-from typing import TypeVar, Callable, Any, Iterable, Optional
+from typing import Tuple, TypeVar, Callable, Any, Iterable, Optional
 
 from gi.repository import Gtk, Gdk, GObject
 
@@ -268,7 +268,7 @@ class DevicePanel(Gtk.Box):
 
         return tree_view, adapter
 
-    def _make_controller_dashboard(self) -> (Gtk.Widget, Callable[[Worker], None]):
+    def _make_controller_dashboard(self) -> Tuple[Gtk.Widget, Callable[[Worker], None]]:
         grid = Gtk.Grid()
         grid.set_row_spacing(4)
         grid.set_column_spacing(4)

@@ -56,11 +56,11 @@ def _connect(executor: ThreadPoolExecutor, address: DeviceAddress,
         if defaults is None:
             LOGGER.warning(f'No default values')
         else:
-            for r, v in defaults.controller.items():
-                dev.controller.write(r, v)
+            for reg, val in defaults.controller.items():
+                dev.controller.write(reg, val)
             for cell in dev.cells:
-                for r, v in defaults.cell.items():
-                    cell.write(r, v)
+                for cell_reg, cell_val in defaults.cell.items():
+                    cell.write(cell_reg, cell_val)
         # Read state
         LOGGER.debug(f'Reading state from {address}')
         on_stage_changed(Stage.READING_STATE)
@@ -113,7 +113,7 @@ class Worker(GObject.Object):
                  ctl_state: ControllerState, cells_state: List[CellState]):
         """This method is for internal use only. Use Worker.create(address) instead."""
         super().__init__()
-        self._executor = executor
+        self._executor: Optional[ThreadPoolExecutor] = executor
         self._device = device
         self._state = cells_state
         self._controller_state = ctl_state
@@ -308,11 +308,11 @@ class Worker(GObject.Object):
             new_values[cell_index - 1] = settings
 
         # Set desired values and start modification
-        for cell, settings in zip(self._state, new_values):
-            if settings is None:
+        for cell, cell_settings in zip(self._state, new_values):
+            if cell_settings is None:
                 self.set_enabled(cell.cell_index, False)
             else:
-                self._start_cell_modification(cell.cell_index, settings)
+                self._start_cell_modification(cell.cell_index, cell_settings)
 
     def set_base_voltage_enabled(self, enabled: bool):
         self._start_ctl_modification(self._controller_state.base_voltage_enabled,

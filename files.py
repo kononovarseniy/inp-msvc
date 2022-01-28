@@ -45,10 +45,10 @@ def read_profile(file: str) -> Profile:
         res = Profile(file)
         for row in reader:
             try:
-                device, cell_index, auto_enable, voltage, cur_lim, ramp_up, ramp_down = row
+                device, cell_index_str, auto_enable, voltage, cur_lim, ramp_up, ramp_down = row
                 settings = CellSettings(False, float(voltage), float(cur_lim),
                                         int(ramp_up), int(ramp_down), auto_enable.lower() == 'true')
-                cell_index = int(cell_index)
+                cell_index = int(cell_index_str)
                 res[device].cell_settings[cell_index] = settings
             except ValueError as e:
                 raise FormatError(f'Wrong row format at line {reader.line_num}: {e}')

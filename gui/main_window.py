@@ -165,7 +165,7 @@ class WorkerWrapper:
         return self._error
 
     @property
-    def profile(self) -> Observable[Profile]:
+    def profile(self) -> Observable[Optional[Profile]]:
         return self._profile
 
 
@@ -293,7 +293,7 @@ class MainWindow(Gtk.ApplicationWindow):
             show_message_dialog(self, 'Unable to load profile', msg)
             LOGGER.error(msg)
 
-    def _set_profile_for_wrapper(self, wrapper: WorkerWrapper, profile: Profile):
+    def _set_profile_for_wrapper(self, wrapper: WorkerWrapper, profile: Optional[Profile]):
         wrapper.profile.value = profile
         worker = wrapper.worker
         if profile is None or worker is None:

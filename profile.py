@@ -1,7 +1,7 @@
 """Contains classes to represent parameters read from a file and written to the device at startup"""
 
 from collections import defaultdict
-from typing import Dict, Union, Iterable
+from typing import DefaultDict, Dict, Iterable, Union
 
 from device.device import DeviceAddress
 from state import CellSettings
@@ -22,7 +22,7 @@ class Profile:
 
     def __init__(self, filename: str):
         super().__init__()
-        self._dict = defaultdict(DeviceProfile)
+        self._dict: DefaultDict[str, DeviceProfile] = defaultdict(DeviceProfile)
         self.filename = filename
 
     def __getitem__(self, device: Union[str, DeviceAddress]):

@@ -28,6 +28,7 @@ def get_row_being_edited(tree_view: Gtk.TreeView) -> Optional[Gtk.TreePath]:
         col: Gtk.TreeViewColumn = cur.focus_column
         if any(c.props.editing for c in col.get_cells()):
             return cur.path
+    return None
 
 
 class GWrapper(GObject.GObject):
@@ -101,6 +102,8 @@ class TreeModelAdapter(Generic[T]):
 
         editable = parse_func is not None and on_changed is not None
         if editable:
+            assert parse_func is not None
+            assert on_changed is not None
             renderer.props.editable = True
             renderer.connect('edited', self._make_edited_signal_handler(parse_func, on_changed))
 

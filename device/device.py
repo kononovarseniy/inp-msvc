@@ -240,7 +240,7 @@ class Cell:
         val &= ~1
         val |= int(enabled)
         resp = self.registers.write(CellRegister.ctl_stat, val)
-        return CellCSR(resp).channel_on_state
+        return bool(CellCSR(resp).channel_on_state)
 
     def is_output_voltage_enabled(self) -> bool:
         val = self.registers.read(CellRegister.ctl_stat)
