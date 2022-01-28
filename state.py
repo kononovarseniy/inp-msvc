@@ -110,6 +110,8 @@ class _CellAuxiliary:
 
     cell_index: int
     """Cell index, numbering from one"""
+    counter_number: str
+    """Counter number"""
     auto_enable: bool
     """If True the cell can be enabled automatically"""
 
@@ -128,6 +130,8 @@ class CellUpdates(_CellReadonly, _CellParametersPlain):  # Reverse order
 class CellSettings(_CellParametersPlain):
     """Contains values of writable cell parameters"""
 
+    counter_number: str
+    """Counter number"""
     auto_enable: bool
     """If True the cell can be enabled automatically"""
 
@@ -145,6 +149,7 @@ def read_cell_state(cell: Cell) -> CellState:
         cell.get_csr(),
 
         cell.get_index(),
+        "",
         False,
 
         cell.get_output_voltage_range(),
@@ -174,6 +179,7 @@ def write_cell_settings(cell: Cell, settings: CellSettings) -> CellSettings:
         cell.set_current_limit(settings.current_limit),
         cell.set_ramp_up_speed(settings.ramp_up_speed),
         cell.set_ramp_down_speed(settings.ramp_down_speed),
+        settings.counter_number,
         settings.auto_enable
     )
 
@@ -196,6 +202,7 @@ def update_desired_state(state: CellState, settings: CellSettings) -> None:
     state.current_limit.set_desired_inc_waiting(settings.current_limit)
     state.ramp_up_speed.set_desired_inc_waiting(settings.ramp_up_speed)
     state.ramp_down_speed.set_desired_inc_waiting(settings.ramp_down_speed)
+    state.counter_number = settings.counter_number
     state.auto_enable = settings.auto_enable
 
 
@@ -205,6 +212,7 @@ def update_actual_state(state: CellState, settings: CellSettings) -> None:
     state.current_limit.set_actual_dec_waiting(settings.current_limit)
     state.ramp_up_speed.set_actual_dec_waiting(settings.ramp_up_speed)
     state.ramp_down_speed.set_actual_dec_waiting(settings.ramp_down_speed)
+    state.counter_number = settings.counter_number
     state.auto_enable = settings.auto_enable
 
 

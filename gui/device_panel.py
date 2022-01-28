@@ -43,6 +43,10 @@ def format_cell_index(state: CellState) -> str:
     return str(state.cell_index)
 
 
+def format_counter_number(state: CellState) -> str:
+    return state.counter_number
+
+
 def cell_enabled_data_func(cell: Gtk.CellRendererToggle, state: CellState):
     cell.props.active = state.enabled.desired
     if state.enabled.waiting:
@@ -231,6 +235,9 @@ class DevicePanel(Gtk.Box):
 
         adapter.append_text_column(tree_view, '#',
                                    make_format_data_func(format_cell_index, checks.good_if_output_enabled))
+
+        adapter.append_text_column(tree_view, 'Cntr',
+                                   make_format_data_func(format_counter_number, lambda _: ErrorType.ok))
 
         adapter.append_toggle_column(tree_view, 'En.\n(des)', cell_enabled_data_func,
                                      self._make_on_changed(Worker.set_enabled))

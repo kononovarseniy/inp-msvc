@@ -175,7 +175,7 @@ class MainWindow(Gtk.ApplicationWindow):
         super().__init__()
         self.set_title(gui_settings.window_title)
         self.set_border_width(0)
-        self.set_default_size(700, 480)
+        self.set_default_size(750, 480)
 
         self.wrappers: List[WorkerWrapper] = []
 
