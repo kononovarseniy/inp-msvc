@@ -40,7 +40,7 @@ logging.basicConfig(
 Global parameters
 """
 
-check_settings.max_voltage_difference = 10
+check_settings.max_voltage_difference = 5
 check_settings.max_voltage_when_off = 100000
 
 gui_settings.window_title = 'Voltage controller'

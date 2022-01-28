@@ -49,6 +49,6 @@ class CheckSettings:
 
 
 check_settings = CheckSettings(
-    max_voltage_difference=10,
+    max_voltage_difference=5,
     max_voltage_when_off=100000
 )
