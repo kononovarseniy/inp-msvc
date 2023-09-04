@@ -23,7 +23,7 @@ class DeviceSocket:
         self.socket.connect(address)
 
     def send_command(self, command: Command) -> CommandResponse:
-        data = encode_command(command).encode()
+        data = encode_command(command).encode('ascii')
         self.socket.sendall(data)
         recv = RESPONSE_LENGTH
         buf = bytearray(RESPONSE_LENGTH)
@@ -32,7 +32,7 @@ class DeviceSocket:
             if res == 0:
                 raise EOFError('Remote device closed connection')
             recv -= res
-        return decode_response(buf.decode())
+        return decode_response(buf.decode('ascii'))
 
     def close(self):
         self.socket.close()
